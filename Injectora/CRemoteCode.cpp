@@ -109,7 +109,6 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 		if (!m_bIs64bit && iFunctionBegin == 0)
 		{
 			PushCall(CCONV_STDCALL, CallAddress); // is actually a stdcall
-
 			return;
 		}
 		else if (!m_bIs64bit && iFunctionBegin == 1)
@@ -127,112 +126,78 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 		}
 		else // fastcall
 		{
-			if (m_bIs64bit && iFunctionBegin > 0) // 64 bit
+			if (m_bIs64bit) // 64 bit
 			{
-				//#ifdef _DEBUG
-				//AddByteToBuffer(0xCC);			// debug INT3 opcode
-				//#endif
+				/* First things first. 64 bit mandatory "shadow" space of at least 32 bytes for EVERY call */
+				/* Stack is 8 byte aligned. Every other param after rcx, rdx, r8, and r9, */
+				/* should be pushed onto the stack */
 
-				if (m_CurrentInvokeInfo.params[0].pparam)
+				// sub rsp, 0x20
+				AddByteToBuffer(0x48);
+				AddByteToBuffer(0x83);
+				AddByteToBuffer(0xEC);
+				AddByteToBuffer(0x20);
+
+				if (iFunctionBegin > 0)
 				{
-					if (m_CurrentInvokeInfo.params[0].ptype == PARAMETER_TYPE_INT64)
+					if (m_CurrentInvokeInfo.params[0].pparam)
 					{
 						unsigned __int64 ulRcxParam = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // rcx param
-
-						// mov rcx, ulRcxParam
-						// push rcx
+						// mov  rcx, ulRcxParam
 						AddByteToBuffer(0x48);
-						AddByteToBuffer(0xB9);			// mov rcx,
-						AddLong64ToBuffer(ulRcxParam);	// ulRcxParam
-						AddByteToBuffer(0x51);			// push rcx
-					}
-					else if (m_CurrentInvokeInfo.params[0].ptype == PARAMETER_TYPE_INT)
-					{
-						unsigned long ulRcxParam = *(unsigned long*)m_CurrentInvokeInfo.params[0].pparam; // rcx param
-						// mov ecx, ulRcxParam
-						// push rcx
-						AddByteToBuffer(0xB9);			// mov ecx,
-						AddLongToBuffer(ulRcxParam);	// ulRcxParam
-						AddByteToBuffer(0x68);			// push
-						AddLongToBuffer(ulRcxParam);	// ulRcxParam
-						//AddByteToBuffer(0x51);		// push rcx
-					}
+						AddByteToBuffer(0xB9);			// mov  rcx, ulRcxParam
+						AddLong64ToBuffer(ulRcxParam);	// 
 
-					// erase rcx param
-					m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
+						// erase rcx param
+						m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
 
-					if (m_CurrentInvokeInfo.params.size() > 0)
-					{				
-						if (m_CurrentInvokeInfo.params[0].pparam)
+						if (m_CurrentInvokeInfo.params.size() > 0)
 						{
-							if (m_CurrentInvokeInfo.params[0].ptype == PARAMETER_TYPE_INT64)
+							if (m_CurrentInvokeInfo.params[0].pparam)
 							{
 								unsigned __int64 ulRdxParam = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // rdx param
-
-								// mov rdx, ulRdxParam
-								// push rdx
+								// mov  rdx, ulRdxParam
 								AddByteToBuffer(0x48);
-								AddByteToBuffer(0xBA);			// mov rdx,
-								AddLong64ToBuffer(ulRdxParam);	// ulRdxParam
-								AddByteToBuffer(0x52);			// push rdx
-							}
-							else if (m_CurrentInvokeInfo.params[0].ptype == PARAMETER_TYPE_INT)
-							{
-								unsigned long ulRdxParam = *(unsigned long*)m_CurrentInvokeInfo.params[0].pparam; // rdx param
-								// mov edx, ulRcxParam
-								// push rdx
-								AddByteToBuffer(0xBA);			// mov edx,
-								AddLongToBuffer(ulRdxParam);	// ulRdxParam
-								AddByteToBuffer(0x68);			// push
-								AddLongToBuffer(ulRdxParam);	// ulRdxParam
-								//AddByteToBuffer(0x52);			// push rdx
-							}
+								AddByteToBuffer(0xBA);			// mov  rdx, ulRdxParam
+								AddLong64ToBuffer(ulRdxParam);	// 
 
-							// erase rdx param
-							m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
+								// erase rdx param
+								m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
 
-							if (m_CurrentInvokeInfo.params.size() > 0)
-							{
-								if (m_CurrentInvokeInfo.params[0].pparam)
+								if (m_CurrentInvokeInfo.params.size() > 0)
 								{
-									if (m_CurrentInvokeInfo.params[0].ptype == PARAMETER_TYPE_INT64)
+									if (m_CurrentInvokeInfo.params[0].pparam)
 									{
 										unsigned __int64 ulR8Param = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // r8 param
-										// mov r8, ulR8Param
-										// push r8
+										// mov  r8, ulR8Param
 										AddByteToBuffer(0x49);
-										AddByteToBuffer(0xB8);			// mov r8,
-										AddLong64ToBuffer(ulR8Param);	// ulR8Param
-										AddByteToBuffer(0x41);			// push r8
-										AddByteToBuffer(0x50);			//
-									}
+										AddByteToBuffer(0xB8);			// mov  r8, ulR8Param
+										AddLong64ToBuffer(ulR8Param);	// 
 
-									// erase r8 param
-									m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
+										// erase r8 param
+										m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
 
-									if (m_CurrentInvokeInfo.params.size() > 0)
-									{
-										if (m_CurrentInvokeInfo.params[0].pparam)
+										if (m_CurrentInvokeInfo.params.size() > 0)
 										{
-											unsigned __int64 ulR9Param = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // r9 param
-											// mov r9, ulR9Param
-											// push r9
-											AddByteToBuffer(0x49);
-											AddByteToBuffer(0xB9);			// mov r9,
-											AddLong64ToBuffer(ulR9Param);	// ulR9Param
-											AddByteToBuffer(0x41);			// push r9
-											AddByteToBuffer(0x51);			//
+											if (m_CurrentInvokeInfo.params[0].pparam)
+											{
+												unsigned __int64 ulR9Param = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // r9 param
+												// mov  r9, ulR9Param
+												AddByteToBuffer(0x49);
+												AddByteToBuffer(0xB9);			// mov  r9, ulR9Param
+												AddLong64ToBuffer(ulR9Param);	// 
 
-											// erase r9 param
-											m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
+												// erase r9 param
+												m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
 
-										} // ulR9Param
-									}
-								} // ulR8Param
-							}
-						} // ulRdxParam
-					}
-				} // ulRcxParam
+											} // ulR9Param
+										}
+									} // ulR8Param
+								}
+							} // ulRdxParam
+						}		
+					} // ulRcxParam
+				}			
 			}
 			else // 32 bit
 			{
@@ -253,8 +218,8 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 
 			if (m_bIs64bit)
 			{
-				//mov rax, calladdress
-				//call rax
+				// mov  rax, calladdress
+				// call rax
 				AddByteToBuffer(0x48);
 				AddByteToBuffer(0xB8);		//mov rax,
 				AddLong64ToBuffer(m_CurrentInvokeInfo.calladdress); // calladdress

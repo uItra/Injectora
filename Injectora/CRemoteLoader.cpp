@@ -721,7 +721,7 @@ BOOL CRemoteLoader::CallEntryPoint(void* BaseAddress, FARPROC Entrypoint)
 	if (m_bIs64bit)
 	{
 		PushInt64((unsigned __int64)BaseAddress);
-		PushInt(DLL_PROCESS_ATTACH);
+		PushInt64(DLL_PROCESS_ATTACH);
 		PushInt64(0x00);
 		PushCall(CCONV_FASTCALL, Entrypoint);
 	}
