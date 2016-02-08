@@ -48,93 +48,113 @@ HMODULE CRemoteLoader::LoadLibraryByPathW(LPCWCH Path)
 		#endif
 		return NULL;
 	}
+	
+	typedef HMODULE(__stdcall *tLoadLibraryW)(LPCWSTR lpLibFileName);
 
-	FARPROC RemoteLoadLibraryW = GetRemoteProcAddress("kernel32.dll", "LoadLibraryW");
-	if (RemoteLoadLibraryW == NULL)
+	//tLoadLibraryW RemoteLoadLibraryW = (tLoadLibraryW)Utils::getProcAddress(Utils::getLocalModuleHandle("kernel32.dll"), "LoadLibraryW");
+	//if (RemoteLoadLibraryW == NULL)
+	//{
+	//	#ifdef DEBUG_MESSAGES_ENABLED
+	//	DebugShout("[LoadLibraryByPathW] LoadLibraryW Resolve Failure");
+	//	#endif
+	//	return NULL;
+	//}
+
+	HMODULE RemoteModuleHandle = LoadLibraryW(Path);
+	if (RemoteModuleHandle == NULL)
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryByPathW] LoadLibraryW Resolve Failure");
 		#endif
 		return NULL;
-
-		//RemoteLoadLibraryW = (FARPROC)Utils::getProcAddress(Utils::getLocalModuleHandle("kernel32.dll"), "LoadLibraryW");
-		//if (RemoteLoadLibraryW == NULL)
-		//{
-		//	#ifdef DEBUG_MESSAGES_ENABLED
-		//	DebugShout("[LoadLibraryByPathW] LoadLibraryW Resolve Failure");
-		//	#endif
-		//	return NULL;
-		//}
 	}
 
-	void* ReturnPointerValue = RemoteAllocateMemory(sizeof(void*));
-
-	PushUNICODEString(Path);
-	PushCall(CCONV_STDCALL, RemoteLoadLibraryW);
-
-	if (m_bIs64bit)
-	{
-		//mov ptr, rax
-		AddByteToBuffer(0x48);
-		AddByteToBuffer(0xA3);
-		AddLong64ToBuffer((unsigned __int64)ReturnPointerValue);
-
-		//xor rax, rax
-		AddByteToBuffer(0x48);
-		AddByteToBuffer(0x33);
-		AddByteToBuffer(0xC0);
-
-		// retn 8 in 64bit
-		AddByteToBuffer(0xC2);
-		AddByteToBuffer(0x08);
-		AddByteToBuffer(0x00);
-	}
-	else
-	{
-		//mov ptr, eax
-		AddByteToBuffer(0xA3);
-		AddLongToBuffer((unsigned long)ReturnPointerValue);
-
-		//xor eax, eax
-		AddByteToBuffer(0x33);
-		AddByteToBuffer(0xC0);
-
-		//retn 4
-		AddByteToBuffer(0xC2);
-		AddByteToBuffer(0x04);
-		AddByteToBuffer(0x00);
-	}
-
-	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[LoadLibraryByPathW] LoadLibraryW = 0x%X", RemoteLoadLibraryW);
-	#endif
-
-	if (ExecuteRemoteThreadBuffer(m_CurrentRemoteThreadBuffer, true) == false)
-	{
-		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[LoadLibraryByPathW] ExecuteRemoteThreadBuffer failed");
-		#endif
-
-		RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
-
-		return NULL;
-	}
-	
-	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[LoadModuleByNameW] ExecuteRemoteThreadBuffer succeeded");
-	#endif
-
-	DWORD_PTR RemoteModuleHandle = 0;
-	if (ReadProcessMemory(GetProcess(), ReturnPointerValue, &RemoteModuleHandle, sizeof(void*), NULL) == TRUE)
-	{
-		RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
-	}
-	else
-	{
-		RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
-		if (RemoteModuleHandle == 0)
-			RemoteModuleHandle = (DWORD_PTR)GetRemoteModuleHandleW(Path);
-	}
+	//FARPROC RemoteLoadLibraryW = GetRemoteProcAddress("kernel32.dll", "LoadLibraryW");
+	//if (RemoteLoadLibraryW == NULL)
+	//{
+	//	#ifdef DEBUG_MESSAGES_ENABLED
+	//	DebugShout("[LoadLibraryByPathW] LoadLibraryW Resolve Failure");
+	//	#endif
+	//	return NULL;
+	//
+	//	//RemoteLoadLibraryW = (FARPROC)Utils::getProcAddress(Utils::getLocalModuleHandle("kernel32.dll"), "LoadLibraryW");
+	//	//if (RemoteLoadLibraryW == NULL)
+	//	//{
+	//	//	#ifdef DEBUG_MESSAGES_ENABLED
+	//	//	DebugShout("[LoadLibraryByPathW] LoadLibraryW Resolve Failure");
+	//	//	#endif
+	//	//	return NULL;
+	//	//}
+	//}
+	//
+	//void* ReturnPointerValue = RemoteAllocateMemory(sizeof(void*));
+	//
+	//PushUNICODEString(Path);
+	//PushCall(CCONV_STDCALL, RemoteLoadLibraryW);
+	//
+	//if (m_bIs64bit)
+	//{
+	//	//mov ptr, rax
+	//	AddByteToBuffer(0x48);
+	//	AddByteToBuffer(0xA3);
+	//	AddLong64ToBuffer((unsigned __int64)ReturnPointerValue);
+	//
+	//	//xor rax, rax
+	//	AddByteToBuffer(0x48);
+	//	AddByteToBuffer(0x33);
+	//	AddByteToBuffer(0xC0);
+	//
+	//	// retn 8 in 64bit
+	//	AddByteToBuffer(0xC2);
+	//	AddByteToBuffer(0x08);
+	//	AddByteToBuffer(0x00);
+	//}
+	//else
+	//{
+	//	//mov ptr, eax
+	//	AddByteToBuffer(0xA3);
+	//	AddLongToBuffer((unsigned long)ReturnPointerValue);
+	//
+	//	//xor eax, eax
+	//	AddByteToBuffer(0x33);
+	//	AddByteToBuffer(0xC0);
+	//
+	//	//retn 4
+	//	AddByteToBuffer(0xC2);
+	//	AddByteToBuffer(0x04);
+	//	AddByteToBuffer(0x00);
+	//}
+	//
+	//#ifdef DEBUG_MESSAGES_ENABLED
+	//DebugShout("[LoadLibraryByPathW] LoadLibraryW = 0x%X", RemoteLoadLibraryW);
+	//#endif
+	//
+	//if (ExecuteRemoteThreadBuffer(m_CurrentRemoteThreadBuffer, true) == false)
+	//{
+	//	#ifdef DEBUG_MESSAGES_ENABLED
+	//	DebugShout("[LoadLibraryByPathW] ExecuteRemoteThreadBuffer failed");
+	//	#endif
+	//
+	//	RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
+	//
+	//	return NULL;
+	//}
+	//
+	//#ifdef DEBUG_MESSAGES_ENABLED
+	//DebugShout("[LoadModuleByNameW] ExecuteRemoteThreadBuffer succeeded");
+	//#endif
+	//
+	//DWORD_PTR RemoteModuleHandle = 0;
+	//if (ReadProcessMemory(GetProcess(), ReturnPointerValue, &RemoteModuleHandle, sizeof(void*), NULL) == TRUE)
+	//{
+	//	RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
+	//}
+	//else
+	//{
+	//	RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
+	//	if (RemoteModuleHandle == 0)
+	//		RemoteModuleHandle = (DWORD_PTR)GetRemoteModuleHandleW(Path);
+	//}
 
 	return (HMODULE)RemoteModuleHandle;
 }
@@ -504,10 +524,10 @@ FARPROC CRemoteLoader::GetRemoteProcAddress(LPCCH Module, LPCCH Function)
 		PushInt((__int32)hRemoteModule);
 
 	PushANSIString(Function);
-	PushCall(CCONV_STDCALL, (FARPROC)((DWORD_PTR)hRemoteKernel32 + (DWORD_PTR)GetProcAddressOffset));
-
 	if (m_bIs64bit)
 	{
+		PushCall(CCONV_FASTCALL, (FARPROC)((DWORD_PTR)hRemoteKernel32 + (DWORD_PTR)GetProcAddressOffset));
+
 		//mov ptr, rax
 		AddByteToBuffer(0x48);
 		AddByteToBuffer(0xA3);
@@ -525,6 +545,8 @@ FARPROC CRemoteLoader::GetRemoteProcAddress(LPCCH Module, LPCCH Function)
 	}
 	else
 	{	
+		PushCall(CCONV_STDCALL, (FARPROC)((DWORD_PTR)hRemoteKernel32 + (DWORD_PTR)GetProcAddressOffset));
+
 		//mov ptr, eax
 		AddByteToBuffer(0xA3);
 		AddLongToBuffer((unsigned long)ReturnPointerValue);
@@ -546,10 +568,8 @@ FARPROC CRemoteLoader::GetRemoteProcAddress(LPCCH Module, LPCCH Function)
 	if (ExecuteRemoteThreadBuffer(m_CurrentRemoteThreadBuffer, true) == false)
 	{
 		RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
-
 		return NULL;
 	}
-
 
 	DWORD_PTR ProcAddressRemote = 0;
 	if (ReadProcessMemory(m_hProcess, ReturnPointerValue, &ProcAddressRemote, sizeof(void*), NULL) == TRUE)
@@ -701,7 +721,7 @@ BOOL CRemoteLoader::CallEntryPoint(void* BaseAddress, FARPROC Entrypoint)
 	if (m_bIs64bit)
 	{
 		PushInt64((unsigned __int64)BaseAddress);
-		PushInt64(DLL_PROCESS_ATTACH);
+		PushInt(DLL_PROCESS_ATTACH);
 		PushInt64(0x00);
 		PushCall(CCONV_FASTCALL, Entrypoint);
 	}
@@ -739,7 +759,7 @@ ExportData CRemoteLoader::GetExport(void* BaseAddress, const char* name_ord, con
 
 	ReadProcessMemory(m_hProcess, (void*)BaseAddress, &hdrDos, sizeof(hdrDos), &dwDummyBytes);
 	if (hdrDos.e_magic != IMAGE_DOS_SIGNATURE)
-		return data;
+		return data; // wtf??
 
 	ReadProcessMemory(m_hProcess, (void*)((DWORD_PTR)BaseAddress + hdrDos.e_lfanew), &hdrNt32, sizeof(IMAGE_NT_HEADERS64), &dwDummyBytes);
 	if (phdrNt32->Signature != IMAGE_NT_SIGNATURE)
@@ -1040,7 +1060,7 @@ BOOL CRemoteLoader::ProcessDelayedImportTable(PVOID BaseAddress, PVOID RemoteAdd
 						}
 					}
 
-					ImageFuncData->u1.Function = (DWORD)FunctionAddress;
+					ImageFuncData->u1.Function = (ULONGLONG)FunctionAddress;
 				}
 			}
 
@@ -1080,7 +1100,7 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 		{
 			for (; ImageImportDescriptor->Name; ImageImportDescriptor++)
 			{
-				PCHAR ModuleName = (PCHAR)RvaToPointer(ImageImportDescriptor->Name, BaseAddress);
+				char* ModuleName = (char*)RvaToPointer(ImageImportDescriptor->Name, BaseAddress);
 				if (ModuleName == NULL)
 				{
 					#ifdef DEBUG_MESSAGES_ENABLED
@@ -1095,7 +1115,7 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 
 				HMODULE ModuleBase = GetRemoteModuleHandleA(ModuleName);
 				if (ModuleBase == NULL)
-					ModuleBase = LoadLibraryByPathA(ModuleName);
+					ModuleBase = LoadLibraryA(ModuleName); // LoadLibraryByPathA
 				if (ModuleBase == NULL)
 				{
 					#ifdef DEBUG_MESSAGES_ENABLED
@@ -1157,7 +1177,7 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 							// Ensure module is loaded
 							HMODULE hFwdMod = GetRemoteModuleHandleA(dllpath);
 							if (hFwdMod == NULL)
-								hFwdMod = LoadLibraryByPathA((PCHAR)dllpath);
+								hFwdMod = LoadLibraryA((PCHAR)dllpath); // LoadLibraryByPathA
 
 							if (!hFwdMod)
 							{
@@ -1187,7 +1207,6 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 						}
 
 						FunctionAddress = (FARPROC)expData.procAddress;
-
 						//FunctionAddress = (FARPROC)GetRemoteProcAddress(ModuleName, Ordinal);
 						
 						#ifdef DEBUG_MESSAGES_ENABLED
@@ -1204,53 +1223,52 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 					else
 					{
 						PIMAGE_IMPORT_BY_NAME ImageImportByName = (PIMAGE_IMPORT_BY_NAME)RvaToPointer(*(DWORD*)ImageThunkData, BaseAddress);
-						PCHAR NameOfImport = (PCHAR)ImageImportByName->Name;
-						ExportData expData = GetExport(ModuleBase, (const char*)ImageImportByName->Name);
+						char* NameOfImport = (char*)ImageImportByName->Name;
 
-						// Still forwarded, load missing modules
-						while (expData.procAddress && expData.isForwarded)
-						{
-							std::string dllpath = expData.forwardModule;
+						//ExportData expData = GetExport(ModuleBase, (const char*)ImageImportByName->Name);
+						//// Still forwarded, load missing modules
+						//while (expData.procAddress && expData.isForwarded)
+						//{
+						//	std::string dllpath = expData.forwardModule;
+						//
+						//	// Ensure module is loaded
+						//	HMODULE hFwdMod = GetRemoteModuleHandleA((PCHAR)dllpath.c_str());
+						//	if (hFwdMod == NULL)
+						//		hFwdMod = LoadLibraryA((PCHAR)dllpath.c_str()); // LoadLibraryByPathA
+						//	if (hFwdMod == NULL)
+						//	{
+						//		// TODO: Add error code
+						//		#ifdef DEBUG_MESSAGES_ENABLED
+						//		DebugShout("[ProcessImportTable] Failed to load forwarded dependency [%s]", ModuleName);
+						//		#endif
+						//		return FALSE;
+						//	}
+						//
+						//	if (expData.forwardByOrd)
+						//		expData = GetExport(hFwdMod, (const char*)expData.forwardOrdinal, dllpath.c_str());
+						//	else
+						//		expData = GetExport(hFwdMod, expData.forwardName, dllpath.c_str());
+						//}
+						//
+						//// Failed to resolve import
+						//if (expData.procAddress == 0)
+						//{
+						//	// TODO: Add error code
+						//	#ifdef DEBUG_MESSAGES_ENABLED
+						//	DebugShout("[ProcessImportTable] Failed to get import [%s] from image [%s]", (PCHAR)ImageImportByName->Name, ModuleName);			
+						//	#endif
+						//
+						//	return FALSE;
+						//}
 
-							// Ensure module is loaded
-							HMODULE hFwdMod = GetRemoteModuleHandleA((PCHAR)dllpath.c_str());
-							if (hFwdMod == NULL)
-								hFwdMod = LoadLibraryByPathA((PCHAR)dllpath.c_str());
-							if (hFwdMod == NULL)
-							{
-								// TODO: Add error code
-								#ifdef DEBUG_MESSAGES_ENABLED
-								DebugShout("[ProcessImportTable] Failed to load forwarded dependency [%s]", ModuleName);
-								#endif
-								return FALSE;
-							}
-
-							if (expData.forwardByOrd)
-								expData = GetExport(hFwdMod, (const char*)expData.forwardOrdinal, dllpath.c_str());
-							else
-								expData = GetExport(hFwdMod, expData.forwardName, dllpath.c_str());
-						}
-
-						// Failed to resolve import
-						if (expData.procAddress == 0)
-						{
-							// TODO: Add error code
-							#ifdef DEBUG_MESSAGES_ENABLED
-							DebugShout("[ProcessImportTable] Failed to get import [%s] from image [%s]", (PCHAR)ImageImportByName->Name, ModuleName);			
-							#endif
-
-							return FALSE;
-						}
-
-						FunctionAddress = (FARPROC)expData.procAddress;
-
-						//FunctionAddress = (FARPROC)GetRemoteProcAddress(ModuleName, NameOfImport);
+						//FunctionAddress = (FARPROC)expData.procAddress;			
+						FunctionAddress = (FARPROC)Utils::getProcAddress(ModuleBase, NameOfImport);
 
 						#ifdef DEBUG_MESSAGES_ENABLED
 						DebugShout("[ProcessImportTable] Processed (%s -> %s) -> (0x%X)", ModuleName, NameOfImport, FunctionAddress);
 						#endif
 
-						if (this->GetProcess() == INVALID_HANDLE_VALUE)
+						if (m_hProcess == INVALID_HANDLE_VALUE)
 						{
 							#ifdef DEBUG_MESSAGES_ENABLED
 							DebugShout("[ProcessImportTable] Normal Value (0x%X)", GetProcAddress(GetModuleHandleA(ModuleName), NameOfImport));
@@ -1258,7 +1276,7 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 						}
 					}
 
-					ImageFuncData->u1.Function = (DWORD)FunctionAddress;
+					ImageFuncData->u1.Function = (ULONGLONG)FunctionAddress;
 				}
 			}
 			return TRUE;
@@ -1285,7 +1303,6 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 BOOL CRemoteLoader::ProcessRelocation(INT ImageBaseDelta, WORD Data, PBYTE RelocationBase)
 {
 	BOOL bReturn = TRUE;
-
 	switch (IMR_RELTYPE(Data))
 	{
 	case IMAGE_REL_BASED_ABSOLUTE: // No action required
@@ -1435,20 +1452,18 @@ BOOL CRemoteLoader::ProcessRelocations(PVOID BaseAddress, PVOID RemoteAddress)
 
 		if (RelocationSize)
 		{
-			PIMAGE_BASE_RELOCATION RelocationDirectory = (PIMAGE_BASE_RELOCATION)
-				RvaToPointer(ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress, BaseAddress);
-
+			PIMAGE_BASE_RELOCATION RelocationDirectory = (PIMAGE_BASE_RELOCATION)RvaToPointer(ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress, BaseAddress);
 			if (RelocationDirectory)
 			{
 				#ifdef DEBUG_MESSAGES_ENABLED
 				DebugShout("[ProcessRelocations] RelocationDirectory (0x%X)", RelocationDirectory);
 				#endif
 
-				PVOID RelocationEnd = (PBYTE)(RelocationDirectory) + RelocationSize;
+				DWORD_PTR RelocationEnd = (DWORD_PTR)RelocationDirectory + RelocationSize;
 
-				while (RelocationDirectory < RelocationEnd)
+				while ((DWORD_PTR)RelocationDirectory < RelocationEnd)
 				{
-					PBYTE RelocBase = (PBYTE)(RvaToPointer(RelocationDirectory->VirtualAddress, BaseAddress));
+					PBYTE RelocBase = (PBYTE)RvaToPointer(RelocationDirectory->VirtualAddress, BaseAddress);
 
 					DWORD NumRelocs = (RelocationDirectory->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
 
@@ -1468,7 +1483,6 @@ BOOL CRemoteLoader::ProcessRelocations(PVOID BaseAddress, PVOID RemoteAddress)
 							#endif
 						}
 					}
-
 					RelocationDirectory = (PIMAGE_BASE_RELOCATION)(RelocationData);
 				}
 			}
@@ -1477,7 +1491,6 @@ BOOL CRemoteLoader::ProcessRelocations(PVOID BaseAddress, PVOID RemoteAddress)
 				#ifdef DEBUG_MESSAGES_ENABLED
 				DebugShout("[ProcessRelocations] Relocations have a size, but the pointer is invalid");
 				#endif
-
 				return FALSE;
 			}
 		}
@@ -1486,7 +1499,6 @@ BOOL CRemoteLoader::ProcessRelocations(PVOID BaseAddress, PVOID RemoteAddress)
 			#ifdef DEBUG_MESSAGES_ENABLED
 			DebugShout("[ProcessRelocations] Relocations have have not been found in this executable, continuing anyway...");
 			#endif
-
 			return TRUE;
 		}
 	}
@@ -1500,13 +1512,18 @@ BOOL CRemoteLoader::ProcessTlsEntries(PVOID BaseAddress, PVOID RemoteAddress)
 	if (ImageNtHeaders == NULL)
 		return FALSE;
 	if (ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].Size == 0)
+	{
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[ProcessTlsEntries] No Tls entries to process");
+		#endif
 		return TRUE; // Success when there is no Tls Entries
+	}
 
 	#ifdef DEBUG_MESSAGES_ENABLED
 	DebugShout("[ProcessTlsEntries] Tls Data detected!");
 	#endif
 
-	IMAGE_TLS_DIRECTORY* TlsDirectory = (IMAGE_TLS_DIRECTORY*)RvaToPointer(ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress, BaseAddress);
+	PIMAGE_TLS_DIRECTORY TlsDirectory = (PIMAGE_TLS_DIRECTORY)RvaToPointer(ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress, BaseAddress);
 	if (TlsDirectory == NULL)
 		return TRUE; // Success when there is no Tls entries / broken data?
 
@@ -1522,7 +1539,7 @@ BOOL CRemoteLoader::ProcessTlsEntries(PVOID BaseAddress, PVOID RemoteAddress)
 	#endif
 
 	PIMAGE_TLS_CALLBACK TLSCallbacks[0xFF];
-	if (ReadProcessMemory(m_hProcess, (const void*)TlsDirectory->AddressOfCallBacks, TLSCallbacks, sizeof(TLSCallbacks), NULL) == FALSE)
+	if (ReadProcessMemory(m_hProcess, (void*)TlsDirectory->AddressOfCallBacks, TLSCallbacks, sizeof(TLSCallbacks), NULL) == FALSE)
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[ProcessTlsEntries] ReadProcessMemory Failed");
@@ -1532,7 +1549,6 @@ BOOL CRemoteLoader::ProcessTlsEntries(PVOID BaseAddress, PVOID RemoteAddress)
 	}
 
 	BOOL SuccessValue = TRUE;
-
 	for (int i = 0; TLSCallbacks[i]; i++)
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
@@ -1540,7 +1556,6 @@ BOOL CRemoteLoader::ProcessTlsEntries(PVOID BaseAddress, PVOID RemoteAddress)
 		#endif
 
 		// As a consequence of the relocation stuff mentioned above, pCallbacks[i] is already fixed
-
 		if (CallEntryPoint(RemoteAddress, (FARPROC)TLSCallbacks[i]) == false)
 		{
 			#ifdef DEBUG_MESSAGES_ENABLED
@@ -1613,8 +1628,7 @@ ULONG CRemoteLoader::GetSectionProtection(ULONG Characteristics)
 BOOL CRemoteLoader::ProcessSection(BYTE* Name, PVOID BaseAddress, PVOID RemoteAddress, ULONG RawData, ULONG VirtualAddress, ULONG RawSize, ULONG VirtualSize, ULONG ProtectFlag)
 {
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[ProcessSection] ProcessSection( %s, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X )",
-					Name, BaseAddress, RemoteAddress, RawData, VirtualAddress, RawSize, VirtualSize, ProtectFlag);
+	DebugShout("[ProcessSection] ProcessSection( %s, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X )", Name, BaseAddress, RemoteAddress, RawData, VirtualAddress, RawSize, VirtualSize, ProtectFlag);
 	#endif
 
 	HANDLE hProcess = GetProcess();
@@ -1671,7 +1685,6 @@ BOOL CRemoteLoader::ProcessSections(PVOID BaseAddress, PVOID RemoteAddress, BOOL
 
 	// Write individual sections
 	PIMAGE_SECTION_HEADER ImageSectionHeader =  (PIMAGE_SECTION_HEADER)(((ULONG_PTR)&ImageNtHeaders->OptionalHeader) + ImageNtHeaders->FileHeader.SizeOfOptionalHeader);
-
 	for (DWORD i = 0; i < ImageNtHeaders->FileHeader.NumberOfSections; i++)
 	{
 		ULONG Protection = GetSectionProtection(ImageSectionHeader[i].Characteristics);
@@ -1680,19 +1693,18 @@ BOOL CRemoteLoader::ProcessSections(PVOID BaseAddress, PVOID RemoteAddress, BOOL
 			#ifdef DEBUG_MESSAGES_ENABLED
 			DebugShout("[ProcessSections] Skipping \".reloc\" section.");
 			#endif
-
 			continue; // NOPE, do not process the .reloc section
 		}
 
 		if (ProcessSection(ImageSectionHeader[i].Name, BaseAddress, RemoteAddress, ImageSectionHeader[i].PointerToRawData, ImageSectionHeader[i].VirtualAddress, ImageSectionHeader[i].SizeOfRawData, ImageSectionHeader[i].Misc.VirtualSize, Protection) == FALSE)
 		{
-			#ifdef DEBUG_MESSAGES_ENABLED
+		#ifdef DEBUG_MESSAGES_ENABLED
 			DebugShout("[ProcessSections] Failed [%s]", ImageSectionHeader[i].Name);
 		}
 		else
 		{
 			DebugShout("[ProcessSections] Success [%s]", ImageSectionHeader[i].Name);
-			#endif
+		#endif
 		}
 	}
 

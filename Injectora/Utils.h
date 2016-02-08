@@ -155,7 +155,7 @@ namespace Utils
 				return NULL;
 
 			/* taking ordinal base into consideration */
-			address = (void*)(modb + func_table[ordinal - ord_base]);
+			address = (void*)((DWORD_PTR)modb + func_table[ordinal - ord_base]);
 		}
 		else
 		{
@@ -166,7 +166,7 @@ namespace Utils
 				char* procEntryName = (char*)((DWORD_PTR)modb + name_table[i]);
 				if (_stricmp(proc_name, procEntryName) == 0)
 				{
-					address = (void*)(modb + func_table[ord_table[i]]);
+					address = (void*)((DWORD_PTR)modb + func_table[ord_table[i]]);
 					break;
 				}
 			}
@@ -183,10 +183,14 @@ namespace Utils
 			func_name = strchr(dll_name, '.');
 			*func_name++ = 0;
 
+			char dllName[256];
+			strcpy_s(dllName, dll_name);
+			strcat_s(dllName, strlen(dll_name) + 4 + 1, ".dll");
+
 			/* is already loaded? */
-			frwd_module = (HMODULE)getLocalModuleHandle(dll_name);
-			//if (!frwd_module)
-			//frwd_module = LoadLibrary(dll_name);
+			frwd_module = (HMODULE)getLocalModuleHandle(dllName);
+			if (!frwd_module)
+				frwd_module = LoadLibraryA(dllName);
 			if (frwd_module)
 				address = getProcAddress(frwd_module, func_name);
 

@@ -28,6 +28,8 @@ typedef enum {
 	PARAMETER_TYPE_WSTRING
 } parameter_type_t;
 
+#define _PARAMETER_TYPE_DWORD PARAMETER_TYPE_INT | PARAMETER_TYPE_FLOAT | PARAMETER_TYPE_SHORT
+
 //
 typedef struct {
 	parameter_type_t			ptype;
