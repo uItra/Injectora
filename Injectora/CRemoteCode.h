@@ -58,8 +58,6 @@ typedef vector<unsigned char>	remote_thread_buffer_t;
 class CRemoteCode
 {
 public:
-	void					SetProcess(HANDLE hProcess);
-
 	void					PushParameter(parameter_type_t param_type, void *param);
 
 	void					PushInt(int i);
@@ -107,6 +105,9 @@ protected:
 	HANDLE					m_hProcess;
 	bool					m_bIs64bit;
 
+	tNTQIP					fnNTQIP;
+	tNTQSI					fnNTQSI;
+
 	invoke_info_t			m_CurrentInvokeInfo;
 	remote_thread_buffer_t	m_CurrentRemoteThreadBuffer;
 
@@ -114,70 +115,6 @@ protected:
 	char					m_infoLog[MAX_PATH];
 	ofstream				m_logFile;
 
-private:
-	static LONG GetProcessorArchitecture()
-	{
-		static LONG volatile nProcessorArchitecture = -1;
-		if (nProcessorArchitecture == -1)
-		{
-			SYSTEM_PROCESSOR_INFORMATION sProcInfo;
-			NTSTATUS nNtStatus;
-	
-			tRtlGetNativeSystemInformation fnRtlGetNativeSystemInformation = (tRtlGetNativeSystemInformation)GetProcAddress(GetModuleHandle("ntdll.dll"), "RtlGetNativeSystemInformation");
-	
-			nNtStatus = fnRtlGetNativeSystemInformation((SYSTEM_INFORMATION_CLASS)SystemProcessorInformation, &sProcInfo, sizeof(sProcInfo), NULL);
-			if (nNtStatus == STATUS_NOT_IMPLEMENTED)
-			{
-				tNTQSI fnNtQuerySystemInformation = (tNTQSI)GetProcAddress(GetModuleHandle("ntdll.dll"), "NtQuerySystemInformation");
-				nNtStatus = fnNtQuerySystemInformation((SYSTEM_INFORMATION_CLASS)SystemProcessorInformation, &sProcInfo, sizeof(sProcInfo), NULL);
-			}
-			if (NT_SUCCESS(nNtStatus))
-				_InterlockedExchange(&nProcessorArchitecture, (LONG)(sProcInfo.ProcessorArchitecture));
-		}
-		return nProcessorArchitecture;
-	}
-
-	static NTSTATUS GetProcessPlatform(HANDLE hProcess)
-	{
-		if (hProcess == (HANDLE)((LONG_PTR)-1))
-		{
-			#if defined(_M_IX86)
-			return 1; // ProcessPlatformX86;
-			#elif defined(_M_X64)
-			return 2; // ProcessPlatformX64
-			#endif
-		}
-		switch (GetProcessorArchitecture())
-		{
-		case PROCESSOR_ARCHITECTURE_INTEL:
-			return 1; // ProcessPlatformX86;
-		case PROCESSOR_ARCHITECTURE_AMD64:
-			//check on 64-bit platforms
-			ULONG_PTR nWow64;
-			NTSTATUS nNtStatus;
-	
-			tNTQIP fnNtQueryInformationProcess = (tNTQIP)GetProcAddress(GetModuleHandle("ntdll.dll"), "NtQueryInformationProcess");
-	
-			nNtStatus = fnNtQueryInformationProcess(hProcess, ProcessWow64Information, &nWow64, sizeof(nWow64), NULL);
-			if (NT_SUCCESS(nNtStatus))
-			{
-				#if defined(_M_IX86)
-				return (nWow64 == 0) ? 2 : 1;
-				#elif defined(_M_X64)
-				return (nWow64 != 0) ? 1 : 2;
-				#endif
-			}
-			#if defined(_M_IX86)
-			return 1;
-			#elif defined(_M_X64)
-			return 2;
-			#endif
-			break;
-			//case PROCESSOR_ARCHITECTURE_IA64:
-			//case PROCESSOR_ARCHITECTURE_ALPHA64:
-		}
-		return STATUS_NOT_SUPPORTED;
-	}
 };
 
 #endif

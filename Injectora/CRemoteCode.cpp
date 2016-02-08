@@ -7,12 +7,6 @@
 #endif
 #include <time.h>
 
-void CRemoteCode::SetProcess(HANDLE hProcess)
-{
-	m_hProcess = hProcess;
-	m_bIs64bit = GetProcessPlatform(m_hProcess) == 2 ? true : false;
-}
-
 void CRemoteCode::PushParameter(parameter_type_t param_type, void *param)
 {
 	parameter_info_t pi;
@@ -26,6 +20,13 @@ void CRemoteCode::PushParameter(parameter_type_t param_type, void *param)
 
 	m_CurrentInvokeInfo.params.push_back(pi);
 }
+
+//void CRemoteCode::PushUInt(int i)
+//{
+//	int *iUse = new int;
+//	*iUse = i;
+//	PushParameter(PARAMETER_TYPE_INT, iUse);
+//}
 
 void CRemoteCode::PushInt(int i)
 {
@@ -99,15 +100,156 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 
 	int iFunctionBegin = (int)m_CurrentInvokeInfo.params.size();
 
-#ifdef _WIN64
-	m_CurrentInvokeInfo.calladdress = (unsigned __int64)CallAddress;
-#else
-	m_CurrentInvokeInfo.calladdress = (unsigned long)CallAddress;
-#endif
+	if (m_bIs64bit)
+		m_CurrentInvokeInfo.calladdress = (unsigned __int64)CallAddress;
+	else
+		m_CurrentInvokeInfo.calladdress = (unsigned long)CallAddress;
 	
 	m_CurrentInvokeInfo.cconv = cconv;
 
-	if (cconv == CCONV_CDECL)
+	if (m_bIs64bit || cconv == CCONV_FASTCALL)
+	{
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("Entering __fastcall");
+		#endif
+
+		if (!m_bIs64bit && iFunctionBegin == 0)
+		{
+			PushCall(CCONV_STDCALL, CallAddress); // is actually a stdcall
+
+			return;
+		}
+		else if (!m_bIs64bit && iFunctionBegin == 1)
+		{
+			unsigned long ulEdxParam = *(unsigned long*)m_CurrentInvokeInfo.params[0].pparam;
+			// mov edx, ulEdxParam
+			AddByteToBuffer(0xBA); // mov edx,
+			AddLongToBuffer(ulEdxParam); // ulEdxParam
+
+			m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin()); // erase edx param
+
+			PushCall(CCONV_STDCALL, CallAddress); // is actually a stdcall
+
+			return;
+		}
+		else // fastcall
+		{
+			if (m_bIs64bit && iFunctionBegin > 0) // 64 bit
+			{
+				#ifdef _DEBUG
+				AddByteToBuffer(0xCC);			// debug INT3 opcode
+				#endif
+
+				if (m_CurrentInvokeInfo.params[0].pparam)
+				{
+					unsigned __int64 ulRcxParam = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // rcx param
+
+					// mov rcx, ulRcxParam
+					// push rcx
+					AddByteToBuffer(0x48);
+					AddByteToBuffer(0xB9);			// mov rcx,
+					AddLong64ToBuffer(ulRcxParam);	// ulRcxParam
+					AddByteToBuffer(0x51);			// push rcx
+
+					// erase rcx param
+					m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
+
+					if (m_CurrentInvokeInfo.params.size() > 0)
+					{				
+						if (m_CurrentInvokeInfo.params[0].pparam)
+						{
+							unsigned __int64 ulRdxParam = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // rdx param
+
+							// mov rdx, ulRdxParam
+							// push rdx
+							AddByteToBuffer(0x48);
+							AddByteToBuffer(0xBA);			// mov rdx,
+							AddLong64ToBuffer(ulRdxParam);	// ulRdxParam
+							AddByteToBuffer(0x52);			// push rdx
+
+							// erase rdx param
+							m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
+
+							if (m_CurrentInvokeInfo.params.size() > 0)
+							{
+								if (m_CurrentInvokeInfo.params[0].pparam)
+								{
+									unsigned __int64 ulR8Param = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // r8 param
+
+									// mov r8, ulR8Param
+									// push r8
+									AddByteToBuffer(0x49);
+									AddByteToBuffer(0xB8);			// mov r8,
+									AddLong64ToBuffer(ulR8Param);	// ulR8Param
+									AddByteToBuffer(0x41);			// push r8
+									AddByteToBuffer(0x50);			//
+
+									// erase r8 param
+									m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
+
+									if (m_CurrentInvokeInfo.params.size() > 0)
+									{
+										if (m_CurrentInvokeInfo.params[0].pparam)
+										{
+											unsigned __int64 ulR9Param = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // r9 param
+											// mov r9, ulR9Param
+											// push r9
+											AddByteToBuffer(0x49);
+											AddByteToBuffer(0xB9);			// mov r9,
+											AddLong64ToBuffer(ulR9Param);	// ulR9Param
+											AddByteToBuffer(0x41);			// push r9
+											AddByteToBuffer(0x51);			//
+
+											// erase r9 param
+											m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
+
+										} // ulR9Param
+									}
+								} // ulR8Param
+							}
+						} // ulRdxParam
+					}
+				} // ulRcxParam
+			}
+			else // 32 bit
+			{
+				unsigned long ulEdxParam = *(unsigned long *)m_CurrentInvokeInfo.params[0].pparam; // edx param
+				unsigned long ulEaxParam = *(unsigned long *)m_CurrentInvokeInfo.params[1].pparam; // eax param
+				//mov edx, ulEdxParam
+				//mov eax, ulEaxParam
+				AddByteToBuffer(0xBA);			// mov edx,
+				AddLongToBuffer(ulEdxParam);	// ulEdxParam
+				AddByteToBuffer(0xB8);			// mov eax,
+				AddLongToBuffer(ulEaxParam);	// ulEaxParam
+
+				m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin()); // erase edx (first) param
+				m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin()); // erase eax (second) param
+			}
+
+			PushAllParameters(true);
+
+			if (m_bIs64bit)
+			{
+				//mov rax, calladdress
+				//call rax
+				AddByteToBuffer(0x48);
+				AddByteToBuffer(0xB8);		//mov rax,
+				AddLong64ToBuffer(m_CurrentInvokeInfo.calladdress); // calladdress
+				AddByteToBuffer(0xFF);		//call
+				AddByteToBuffer(0xD0);		//rax
+			}
+			else
+			{
+				//mov ebx, calladdress
+				//call ebx
+				AddByteToBuffer(0xBB);		//mov ebx,
+				AddLongToBuffer((unsigned long)m_CurrentInvokeInfo.calladdress); // calladdress
+				AddByteToBuffer(0xFF);		//call
+				AddByteToBuffer(0xD3);		//ebx
+			}
+		}
+	}
+	else if (cconv == CCONV_CDECL)
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("Entering __cdecl");
@@ -135,7 +277,7 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 			//mov eax, calladdress
 			//call eax
 			AddByteToBuffer(0xB8);			//mov eax,						
-			AddLongToBuffer(m_CurrentInvokeInfo.calladdress); // calladdress	
+			AddLongToBuffer((unsigned long)m_CurrentInvokeInfo.calladdress); // calladdress	
 			AddByteToBuffer(0xFF);			//call
 			AddByteToBuffer(0xD0);			//eax
 		}
@@ -177,7 +319,7 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 			//call rax
 			AddByteToBuffer(0x48);			//mov rax,	
 			AddByteToBuffer(0xB8);
-			AddLong64ToBuffer(m_CurrentInvokeInfo.calladdress); // calladdress	
+			AddLong64ToBuffer(m_CurrentInvokeInfo.calladdress); // calladdress
 			AddByteToBuffer(0xFF);			//call
 			AddByteToBuffer(0xD0);			//rax
 		}
@@ -186,7 +328,7 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 			//mov eax, calladdress
 			//call eax
 			AddByteToBuffer(0xB8);			//mov eax,						
-			AddLongToBuffer(m_CurrentInvokeInfo.calladdress); // calladdress	
+			AddLongToBuffer((unsigned long)m_CurrentInvokeInfo.calladdress); // calladdress	
 			AddByteToBuffer(0xFF);			//call
 			AddByteToBuffer(0xD0);			//eax
 		}
@@ -259,99 +401,9 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 		else
 		{
 			AddByteToBuffer(0xB8);			// mov eax, 
-			AddLongToBuffer(m_CurrentInvokeInfo.calladdress); // calladdress
+			AddLongToBuffer((unsigned long)m_CurrentInvokeInfo.calladdress); // calladdress
 			AddByteToBuffer(0xFF);			// call
 			AddByteToBuffer(0xD0);			// eax
-		}
-
-	}
-	else if(cconv == CCONV_FASTCALL)
-	{
-		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("Entering __fastcall");
-		#endif
-
-		if (iFunctionBegin == 0)
-		{
-			PushCall(CCONV_STDCALL, CallAddress); // is actually a stdcall
-
-			return;
-		}
-		else if (iFunctionBegin == 1)
-		{
-			if (m_bIs64bit)
-			{
-				unsigned __int64 ulRdxParam = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam;
-				// mov rdx, ulRdxParam
-				AddByteToBuffer(0x48);
-				AddByteToBuffer(0xBA); // mov rdx,
-				AddLong64ToBuffer(ulRdxParam); // ulRdxParam
-			}
-			else
-			{
-				unsigned long ulEdxParam = *(unsigned long*)m_CurrentInvokeInfo.params[0].pparam;
-				// mov edx, ulEdxParam
-				AddByteToBuffer(0xBA); // mov edx,
-				AddLongToBuffer(ulEdxParam); // ulEdxParam
-			}
-
-			m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin()); // erase edx param
-
-			PushCall(CCONV_STDCALL, CallAddress); // is actually a stdcall
-
-			return;
-		}
-		else // fastcall
-		{
-			if (m_bIs64bit)
-			{
-				unsigned long ulRdxParam = *(unsigned long *)m_CurrentInvokeInfo.params[0].pparam; // rdx param
-				unsigned long ulRaxParam = *(unsigned long *)m_CurrentInvokeInfo.params[1].pparam; // rax param
-				//mov edx, ulRdxParam
-				//mov eax, ulRaxParam
-				AddByteToBuffer(0x48);
-				AddByteToBuffer(0xBA);			// mov rdx,
-				AddLong64ToBuffer(ulRdxParam);	// ulRdxParam
-				AddByteToBuffer(0x48);
-				AddByteToBuffer(0xB8);			// mov rax,
-				AddLong64ToBuffer(ulRaxParam);	// ulRaxParam
-			}
-			else
-			{
-				unsigned long ulEdxParam = *(unsigned long *)m_CurrentInvokeInfo.params[0].pparam; // edx param
-				unsigned long ulEaxParam = *(unsigned long *)m_CurrentInvokeInfo.params[1].pparam; // eax param
-				//mov edx, ulEdxParam
-				//mov eax, ulEaxParam
-				AddByteToBuffer(0xBA);			// mov edx,
-				AddLongToBuffer(ulEdxParam);	// ulEdxParam
-				AddByteToBuffer(0xB8);			// mov eax,
-				AddLongToBuffer(ulEaxParam);	// ulEaxParam
-			}
-
-			m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin()); // erase edx (first) param
-			m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin()); // erase eax (second) param
-
-			PushAllParameters(true);
-
-			if (m_bIs64bit)
-			{
-				//mov rbx, calladdress
-				//call rbx
-				AddByteToBuffer(0x48);
-				AddByteToBuffer(0xBB);		//mov rbx,
-				AddLong64ToBuffer(m_CurrentInvokeInfo.calladdress); // calladdress
-				AddByteToBuffer(0xFF);		//call
-				AddByteToBuffer(0xD3);		//rbx
-			}
-			else
-			{
-				//mov ebx, calladdress
-				//call ebx
-				AddByteToBuffer(0xBB);		//mov ebx,
-				AddLongToBuffer(m_CurrentInvokeInfo.calladdress); // calladdress
-				AddByteToBuffer(0xFF);		//call
-				AddByteToBuffer(0xD3);		//ebx
-			}
 		}
 	}
 
@@ -555,10 +607,8 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 
 		switch (paraminfo->ptype)
 		{
-		#ifdef _WIN64
-		case PARAMETER_TYPE_POINTER:	// all the same shit 8 bytes
-		case PARAMETER_TYPE_DOUBLE:		//
-		#endif
+		//case PARAMETER_TYPE_POINTER:	// 
+		case PARAMETER_TYPE_DOUBLE:		// all the same shit 8 bytes
 		case PARAMETER_TYPE_INT64:		//
 		{
 			if (paraminfo->pparam)
@@ -577,6 +627,11 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 				else
 				{
 					// ill do this later
+
+					unsigned long ulParam = *(unsigned long *)paraminfo->pparam;
+					// push ulParam
+					AddByteToBuffer(0x68);
+					AddLongToBuffer(ulParam);
 				}
 			}
 			else
@@ -589,9 +644,39 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 			}
 			break;
 		}
-		#ifndef _WIN64
 		case PARAMETER_TYPE_POINTER:	//
-		#endif
+		{
+			if (paraminfo->pparam)
+			{
+				unsigned __int64 ulParam = *(unsigned __int64 *)paraminfo->pparam;
+
+				if (m_bIs64bit)
+				{
+					// mov rax, 0xACEACEACACEACEAC ; ulParam
+					// push rax
+					AddByteToBuffer(0x48);
+					AddByteToBuffer(0xB8);
+					AddLong64ToBuffer(ulParam);
+					AddByteToBuffer(0x50);
+				}
+				else
+				{
+					unsigned long ulParam = *(unsigned long *)paraminfo->pparam;
+					// push ulParam
+					AddByteToBuffer(0x68);
+					AddLongToBuffer(ulParam);
+				}
+			}
+			else
+			{
+				// if it is PARAMETER_TYPE_POINTER with a NULL pointer
+				// we don't want to crash
+				// push 0
+				AddByteToBuffer(0x68);
+				AddLongToBuffer(0x00);
+			}
+			break;
+		}
 		case PARAMETER_TYPE_SHORT:		// all the same shit 4 bytes
 		case PARAMETER_TYPE_INT:		//
 		case PARAMETER_TYPE_FLOAT:		//
@@ -794,7 +879,7 @@ void CRemoteCode::DebugShout(const char *fmt, ...)
 			}
 			strcpy_s(m_baseDir, szAppDataPath);
 			strcat_s(m_baseDir, "Local\\injectora\\");
-			utils.CreateDirectoryIfNeeded(m_baseDir);
+			Utils::CreateDirectoryIfNeeded(m_baseDir);
 			printf_s("basedir: %s\n", m_baseDir);
 		}
 		else

@@ -9,6 +9,8 @@ MainComponent::MainComponent() : manualMap(false), autoInject(false), closeOnInj
 	processesWindow = new ProcessesWindow();
 	aboutWindow = new AboutWindow();
 
+	injector.EnableDebugPriv();
+
 	injector.SetManualMap(manualMap);
 	injector.SetAutoInject(autoInject);
 	injector.SetCloseOnInject(closeOnInject);

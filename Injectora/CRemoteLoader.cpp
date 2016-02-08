@@ -9,19 +9,27 @@
 #undef UNICODE
 #endif
 
-#define MakePtr( cast, ptr, addValue ) (cast)( (DWORD_PTR)(ptr) + (DWORD_PTR)(addValue))
-#define MakeDelta(cast, x, y) (cast) ( (DWORD_PTR)(x) - (DWORD_PTR)(y))
+#define MakePtr(cast, ptr, addValue) (cast)((DWORD_PTR)(ptr) + (DWORD_PTR)(addValue))
+#define MakeDelta(cast, x, y) (cast)((DWORD_PTR)(x) - (DWORD_PTR)(y))
 
 // ######################
 // ## Public functions ##
 // ######################
+void CRemoteLoader::SetProcess(HANDLE hProcess)
+{
+	m_hProcess = hProcess;
+	
+	HMODULE hNtDll = (HMODULE)Utils::getLocalModuleHandle("ntdll.dll");
+	fnNTQIP = (tNTQIP)Utils::getProcAddress(hNtDll, "NtQueryInformationProcess");
+	fnNTQSI = (tNTQSI)Utils::getProcAddress(hNtDll, "NtQuerySystemInformation");
+
+	m_bIs64bit = GetProcessPlatform() == 2 ? true : false;
+}
 
 HMODULE CRemoteLoader::LoadLibraryByPathA(LPCCH Path)
 {
 	WCHAR Module[MAX_PATH] = { 0 };
-
 	size_t charsConverted;
-
 	mbstowcs_s(&charsConverted, Module, Path, MAX_PATH);
 
 	#ifdef DEBUG_MESSAGES_ENABLED
@@ -38,7 +46,6 @@ HMODULE CRemoteLoader::LoadLibraryByPathW(LPCWCH Path)
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryByPathW] szString is NULL");
 		#endif
-
 		return NULL;
 	}
 
@@ -48,36 +55,55 @@ HMODULE CRemoteLoader::LoadLibraryByPathW(LPCWCH Path)
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryByPathW] LoadLibraryW Resolve Failure");
 		#endif
-
 		return NULL;
+
+		//RemoteLoadLibraryW = (FARPROC)Utils::getProcAddress(Utils::getLocalModuleHandle("kernel32.dll"), "LoadLibraryW");
+		//if (RemoteLoadLibraryW == NULL)
+		//{
+		//	#ifdef DEBUG_MESSAGES_ENABLED
+		//	DebugShout("[LoadLibraryByPathW] LoadLibraryW Resolve Failure");
+		//	#endif
+		//	return NULL;
+		//}
 	}
 
-	#ifdef _WIN64
-	void* ReturnPointerValue = RemoteAllocateMemory(sizeof(DWORD64));
-	#else
-	void* ReturnPointerValue = RemoteAllocateMemory(sizeof(DWORD));
-	#endif
+	void* ReturnPointerValue = RemoteAllocateMemory(sizeof(void*));
 
 	PushUNICODEString(Path);
-
 	PushCall(CCONV_STDCALL, RemoteLoadLibraryW);
 
-	//mov ptr, eax
-	AddByteToBuffer(0xA3);
-	#ifdef _WIN64
-	AddLong64ToBuffer((DWORD64)ReturnPointerValue);
-	#else
-	AddLongToBuffer((DWORD)ReturnPointerValue);
-	#endif
+	if (m_bIs64bit)
+	{
+		//mov ptr, rax
+		AddByteToBuffer(0x48);
+		AddByteToBuffer(0xA3);
+		AddLong64ToBuffer((unsigned __int64)ReturnPointerValue);
 
-	//xor eax, eax
-	AddByteToBuffer(0x33);
-	AddByteToBuffer(0xC0);
+		//xor rax, rax
+		AddByteToBuffer(0x48);
+		AddByteToBuffer(0x33);
+		AddByteToBuffer(0xC0);
 
-	//retn 4
-	AddByteToBuffer(0xC2);
-	AddByteToBuffer(0x04);
-	AddByteToBuffer(0x00);
+		// retn 8 in 64bit
+		AddByteToBuffer(0xC2);
+		AddByteToBuffer(0x08);
+		AddByteToBuffer(0x00);
+	}
+	else
+	{
+		//mov ptr, eax
+		AddByteToBuffer(0xA3);
+		AddLongToBuffer((unsigned long)ReturnPointerValue);
+
+		//xor eax, eax
+		AddByteToBuffer(0x33);
+		AddByteToBuffer(0xC0);
+
+		//retn 4
+		AddByteToBuffer(0xC2);
+		AddByteToBuffer(0x04);
+		AddByteToBuffer(0x00);
+	}
 
 	#ifdef DEBUG_MESSAGES_ENABLED
 	DebugShout("[LoadLibraryByPathW] LoadLibraryW = 0x%X", RemoteLoadLibraryW);
@@ -89,7 +115,7 @@ HMODULE CRemoteLoader::LoadLibraryByPathW(LPCWCH Path)
 		DebugShout("[LoadLibraryByPathW] ExecuteRemoteThreadBuffer failed");
 		#endif
 
-		RemoteFreeMemory(ReturnPointerValue, sizeof(DWORD));
+		RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
 
 		return NULL;
 	}
@@ -98,20 +124,16 @@ HMODULE CRemoteLoader::LoadLibraryByPathW(LPCWCH Path)
 	DebugShout("[LoadModuleByNameW] ExecuteRemoteThreadBuffer succeeded");
 	#endif
 
-	DWORD RemoteModuleHandle = 0;
-
-	if (ReadProcessMemory(GetProcess(), ReturnPointerValue, &RemoteModuleHandle, sizeof(DWORD), NULL) == TRUE)
+	DWORD_PTR RemoteModuleHandle = 0;
+	if (ReadProcessMemory(GetProcess(), ReturnPointerValue, &RemoteModuleHandle, sizeof(void*), NULL) == TRUE)
 	{
-		RemoteFreeMemory(ReturnPointerValue, sizeof(DWORD));
+		RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
 	}
 	else
 	{
-		RemoteFreeMemory(ReturnPointerValue, sizeof(DWORD));
-
+		RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
 		if (RemoteModuleHandle == 0)
-		{
-			RemoteModuleHandle = (DWORD)GetRemoteModuleHandleW(Path);
-		}
+			RemoteModuleHandle = (DWORD_PTR)GetRemoteModuleHandleW(Path);
 	}
 
 	return (HMODULE)RemoteModuleHandle;
@@ -131,6 +153,8 @@ HMODULE CRemoteLoader::LoadLibraryByPathIntoMemoryA(LPCCH Path, BOOL PEHeader)
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryByPathIntoMemoryA] Failed to open file handle!");
 		#endif
+
+		MessageBox(0, "Failed to open DLL file!", "Injectora", MB_ICONERROR);
 
 		return NULL;
 	}
@@ -219,8 +243,7 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 
 	// SizeOfImage NOT the same as module size MOTHERFUCKER
 	// http://www.youtube.com/watch?v=pele5vptVgc
-
-	PVOID AllocatedRemoteMemory = RemoteAllocateMemory(ImageNtHeaders->OptionalHeader.SizeOfImage);
+	void* AllocatedRemoteMemory = RemoteAllocateMemory(ImageNtHeaders->OptionalHeader.SizeOfImage);
 	if (AllocatedRemoteMemory == NULL)
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
@@ -335,37 +358,125 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 }
 
 // Private functions
-HMODULE CRemoteLoader::GetRemoteModuleHandleA(LPCCH Module)
+HMODULE CRemoteLoader::GetRemoteModuleHandleA(const char* Module)
 {
-	HANDLE tlh = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetProcessId(GetProcess()));
+	void* dwModuleHandle = 0;
 
-	MODULEENTRY32 modEntry;
+	PPROCESS_BASIC_INFORMATION pbi = NULL;
+	PEB peb;
+	PEB_LDR_DATA peb_ldr;
 
-	modEntry.dwSize = sizeof(MODULEENTRY32);
+	// Try to allocate buffer 
+	HANDLE	hHeap = GetProcessHeap();
+	DWORD dwSize = sizeof(PROCESS_BASIC_INFORMATION);
+	pbi = (PPROCESS_BASIC_INFORMATION)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, dwSize);
 
-	Module32First(tlh, &modEntry);
-	do
+	ULONG dwSizeNeeded = 0;
+	NTSTATUS dwStatus = fnNTQIP(m_hProcess, ProcessBasicInformation, pbi, dwSize, &dwSizeNeeded);
+	if (dwStatus >= 0 && dwSize < dwSizeNeeded)
 	{
-		if (_stricmp(Module, modEntry.szModule) == 0)
+		if (pbi)
+			HeapFree(hHeap, 0, pbi);
+
+		pbi = (PPROCESS_BASIC_INFORMATION)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, dwSizeNeeded);
+		if (!pbi)
 		{
-			CloseHandle(tlh);
-			return modEntry.hModule;
+			#ifdef _DEBUG
+			printf("Couldn't allocate heap buffer!\n");
+			#endif
+			return NULL;
 		}
-	} while (Module32Next(tlh, &modEntry));
 
-	CloseHandle(tlh);
+		dwStatus = fnNTQIP(m_hProcess, ProcessBasicInformation, pbi, dwSizeNeeded, &dwSizeNeeded);
+	}
 
-	return NULL;
+	// Did we successfully get basic info on process
+	if (dwStatus >= 0)
+	{
+		// Read Process Environment Block (PEB)
+		if (pbi->PebBaseAddress)
+		{
+			SIZE_T dwBytesRead = 0;
+			if (ReadProcessMemory(m_hProcess, pbi->PebBaseAddress, &peb, sizeof(peb), &dwBytesRead))
+			{
+				dwBytesRead = 0;
+				if (ReadProcessMemory(m_hProcess, peb.Ldr, &peb_ldr, sizeof(peb_ldr), &dwBytesRead))
+				{
+					LIST_ENTRY *pLdrListHead = (LIST_ENTRY *)peb_ldr.InLoadOrderModuleList.Flink;
+					LIST_ENTRY *pLdrCurrentNode = peb_ldr.InLoadOrderModuleList.Flink;
+					do
+					{
+						LDR_DATA_TABLE_ENTRY lstEntry = { 0 };
+						dwBytesRead = 0;
+						if (!ReadProcessMemory(m_hProcess, (void*)pLdrCurrentNode, &lstEntry, sizeof(LDR_DATA_TABLE_ENTRY), &dwBytesRead))
+						{
+							#ifdef _DEBUG
+							char dbgOut[1024];
+							sprintf_s(dbgOut, "Could not read list entry from LDR list. Error = %X", GetLastError());
+							MessageBox(0, dbgOut, "Injectora DBG", MB_ICONERROR);
+							#endif
+
+							if (pbi)
+								HeapFree(hHeap, 0, pbi);
+							return NULL;
+						}
+
+						pLdrCurrentNode = lstEntry.InLoadOrderLinks.Flink;
+
+						//wchar_t wcsFullDllName[MAX_PATH] = { 0 };
+						//char strFullDllName[MAX_PATH] = { 0 };
+						//if (lstEntry.FullDllName.Length > 0)
+						//{
+						//	dwBytesRead = 0;
+						//	if (ReadProcessMemory(m_hProcess, (void*)lstEntry.FullDllName.Buffer, &wcsFullDllName, lstEntry.FullDllName.Length, &dwBytesRead))
+						//	{
+						//		size_t bytesCopied = 0;
+						//		wcstombs_s(&bytesCopied, strFullDllName, wcsFullDllName, MAX_PATH);
+						//		#ifdef _DEBUG
+						//		printf("Full Dll Name: %s\n", strFullDllName);
+						//		#endif
+						//	}
+						//}
+
+						wchar_t wcsBaseDllName[MAX_PATH] = { 0 };
+						char strBaseDllName[MAX_PATH] = { 0 };
+						if (lstEntry.BaseDllName.Length > 0)
+						{
+							dwBytesRead = 0;
+							if (ReadProcessMemory(m_hProcess, (LPCVOID)lstEntry.BaseDllName.Buffer, &wcsBaseDllName, lstEntry.BaseDllName.Length, &dwBytesRead))
+							{
+								size_t bytesCopied = 0;
+								wcstombs_s(&bytesCopied, strBaseDllName, wcsBaseDllName, MAX_PATH);
+							}
+						}
+
+						if (lstEntry.DllBase != nullptr && lstEntry.SizeOfImage != 0)
+						{
+							if (_stricmp(strBaseDllName, Module) == 0)
+							{
+								dwModuleHandle = lstEntry.DllBase;
+								break;
+							}
+						}
+
+					} while (pLdrListHead != pLdrCurrentNode);
+
+				} // Get Ldr
+			} // Read PEB 
+		} // Check for PEB
+	}
+
+	if (pbi)
+		HeapFree(hHeap, 0, pbi);
+
+	return (HMODULE)dwModuleHandle;
 }
 
 HMODULE CRemoteLoader::GetRemoteModuleHandleW(LPCWCH Module)
 {
 	char ModuleAnsi[MAX_PATH] = { 0 };
-	
 	size_t charsConverted;
-
 	wcstombs_s(&charsConverted, ModuleAnsi, Module, MAX_PATH);
-
 	return GetRemoteModuleHandleA(ModuleAnsi);
 }
 
@@ -387,48 +498,46 @@ FARPROC CRemoteLoader::GetRemoteProcAddress(LPCCH Module, LPCCH Function)
 
 	void* ReturnPointerValue = RemoteAllocateMemory(sizeof(void*));
 
-#ifdef _WIN64
-	PushInt64((__int64)hRemoteModule);
-#else
-	PushInt((__int32)hRemoteModule);
-#endif
+	if (m_bIs64bit)
+		PushInt64((__int64)hRemoteModule);
+	else
+		PushInt((__int32)hRemoteModule);
+
 	PushANSIString(Function);
 	PushCall(CCONV_STDCALL, (FARPROC)((DWORD_PTR)hRemoteKernel32 + (DWORD_PTR)GetProcAddressOffset));
 
-	
-#ifdef _WIN64
-	//mov ptr, rax
-	AddByteToBuffer(0x48);
-	AddByteToBuffer(0xA3);
-	AddLong64ToBuffer((DWORD64)ReturnPointerValue);
-#else
-	//mov ptr, eax
-	AddByteToBuffer(0xA3);
-	AddLongToBuffer((DWORD)ReturnPointerValue);
-#endif
-	
-#ifdef _WIN64
-	//xor rax, rax
-	AddByteToBuffer(0x48);
-	AddByteToBuffer(0x33);
-	AddByteToBuffer(0xC0);
-#else
-	//xor eax, eax
-	AddByteToBuffer(0x33);
-	AddByteToBuffer(0xC0);
-#endif
+	if (m_bIs64bit)
+	{
+		//mov ptr, rax
+		AddByteToBuffer(0x48);
+		AddByteToBuffer(0xA3);
+		AddLong64ToBuffer((unsigned __int64)ReturnPointerValue);
 
-#ifdef _WIN64
-	// retn 8 in 64bit
-	AddByteToBuffer(0xC2);
-	AddByteToBuffer(0x08);
-	AddByteToBuffer(0x00);
-#else
-	//retn 4
-	AddByteToBuffer(0xC2);
-	AddByteToBuffer(0x04);
-	AddByteToBuffer(0x00);
-#endif
+		//xor rax, rax
+		AddByteToBuffer(0x48);
+		AddByteToBuffer(0x33);
+		AddByteToBuffer(0xC0);
+
+		// retn 8 in 64bit
+		AddByteToBuffer(0xC2);
+		AddByteToBuffer(0x08);
+		AddByteToBuffer(0x00);
+	}
+	else
+	{	
+		//mov ptr, eax
+		AddByteToBuffer(0xA3);
+		AddLongToBuffer((unsigned long)ReturnPointerValue);
+
+		//xor eax, eax
+		AddByteToBuffer(0x33);
+		AddByteToBuffer(0xC0);
+
+		//retn 4
+		AddByteToBuffer(0xC2);
+		AddByteToBuffer(0x04);
+		AddByteToBuffer(0x00);
+	}
 
 	#ifdef DEBUG_MESSAGES_ENABLED
 	DebugShout("\n\nGetRemoteProcAddress [%s][%s]:", Module, Function);
@@ -441,13 +550,9 @@ FARPROC CRemoteLoader::GetRemoteProcAddress(LPCCH Module, LPCCH Function)
 		return NULL;
 	}
 
-#ifdef _WIN64
-	unsigned __int64 ProcAddressRemote = 0;
-#else
-	DWORD ProcAddressRemote = 0;
-#endif
 
-	if (ReadProcessMemory(GetProcess(), ReturnPointerValue, &ProcAddressRemote, sizeof(void*), NULL) == TRUE)
+	DWORD_PTR ProcAddressRemote = 0;
+	if (ReadProcessMemory(m_hProcess, ReturnPointerValue, &ProcAddressRemote, sizeof(void*), NULL) == TRUE)
 	{
 		RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
 		
@@ -594,13 +699,19 @@ PVOID CRemoteLoader::ImageDirectoryEntryToData(PVOID BaseAddress, USHORT DataDir
 BOOL CRemoteLoader::CallEntryPoint(void* BaseAddress, FARPROC Entrypoint)
 {
 	if (m_bIs64bit)
-		PushInt64((__int64)BaseAddress);
+	{
+		PushInt64((unsigned __int64)BaseAddress);
+		PushInt64(DLL_PROCESS_ATTACH);
+		PushInt64(0x00);
+		PushCall(CCONV_FASTCALL, Entrypoint);
+	}
 	else
+	{
 		PushInt((INT)BaseAddress);
-
-	PushInt(DLL_PROCESS_ATTACH);
-	PushInt(0);
-	PushCall(CCONV_STDCALL, Entrypoint);
+		PushInt(DLL_PROCESS_ATTACH);
+		PushInt(0);
+		PushCall(CCONV_STDCALL, Entrypoint);
+	}
 	
 	remote_thread_buffer_t buffer = AssembleRemoteThreadBuffer();
 
@@ -651,9 +762,9 @@ ExportData CRemoteLoader::GetExport(void* BaseAddress, const char* name_ord, con
 
 		ReadProcessMemory(m_hProcess, (void*)((DWORD_PTR)BaseAddress + expBase), pExpData, expSize, &dwDummyBytes);
 
-		WORD* pAddressOfOrds = (WORD*)(pExpData->AddressOfNameOrdinals + (size_t)pExpData - expBase);
-		DWORD_PTR* pAddressOfNames = (DWORD_PTR*)(pExpData->AddressOfNames + (size_t)pExpData - expBase);
-		DWORD_PTR* pAddressOfFuncs = (DWORD_PTR*)(pExpData->AddressOfFunctions + (size_t)pExpData - expBase);
+		WORD* pAddressOfOrds   = (WORD*)(pExpData->AddressOfNameOrdinals + (size_t)pExpData - expBase);
+		DWORD* pAddressOfNames = (DWORD*)(pExpData->AddressOfNames + (size_t)pExpData - expBase);
+		DWORD* pAddressOfFuncs = (DWORD*)(pExpData->AddressOfFunctions + (size_t)pExpData - expBase);
 
 		for (DWORD i = 0; i < pExpData->NumberOfFunctions; ++i)
 		{
@@ -668,13 +779,13 @@ ExportData CRemoteLoader::GetExport(void* BaseAddress, const char* name_ord, con
 			// Find by name
 			else if ((size_t)name_ord > 0xFFFF && i < pExpData->NumberOfNames)
 			{
-				pName = (char*)(pAddressOfNames[i] + (size_t)pExpData - expBase);
+				pName = (char*)(pAddressOfNames[i] + (DWORD_PTR)pExpData - expBase);
 				OrdIndex = (WORD)pAddressOfOrds[i];
 			}
 			else
 				return data;
 
-			if (((size_t)name_ord <= 0xFFFF && (WORD)((unsigned int)name_ord) == (OrdIndex + pExpData->Base)) || ((size_t)name_ord > 0xFFFF && strcmp(pName, name_ord) == 0))
+			if (((size_t)name_ord <= 0xFFFF && (size_t)(name_ord) == (size_t)(OrdIndex + pExpData->Base)) || ((size_t)name_ord > 0xFFFF && strcmp(pName, name_ord) == 0))
 			{
 				data.procAddress = pAddressOfFuncs[OrdIndex] + (DWORD_PTR)BaseAddress;
 				
@@ -861,7 +972,7 @@ BOOL CRemoteLoader::ProcessDelayedImportTable(PVOID BaseAddress, PVOID RemoteAdd
 						DebugShout("[ProcessDelayedImportTable] Processed (%s -> %i) -> (0x%X)", ModuleName, Ordinal, FunctionAddress);
 						#endif
 
-						if (this->GetProcess() == INVALID_HANDLE_VALUE)
+						if (m_hProcess == INVALID_HANDLE_VALUE)
 						{
 							#ifdef DEBUG_MESSAGES_ENABLED
 							DebugShout("[ProcessDelayedImportTable] Normal Value (0x%X)", GetProcAddress(GetModuleHandleA(ModuleName), (LPCSTR)Ordinal));
@@ -965,7 +1076,6 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 	if (ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size)
 	{
 		PIMAGE_IMPORT_DESCRIPTOR ImageImportDescriptor = (PIMAGE_IMPORT_DESCRIPTOR)RvaToPointer(ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress, BaseAddress);
-
 		if (ImageImportDescriptor)
 		{
 			for (; ImageImportDescriptor->Name; ImageImportDescriptor++)
@@ -976,7 +1086,6 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 					#ifdef DEBUG_MESSAGES_ENABLED
 					DebugShout("[ProcessImportTable] Module name for entry NULL");
 					#endif
-
 					continue;
 				}
 
@@ -1566,7 +1675,7 @@ BOOL CRemoteLoader::ProcessSections(PVOID BaseAddress, PVOID RemoteAddress, BOOL
 	for (DWORD i = 0; i < ImageNtHeaders->FileHeader.NumberOfSections; i++)
 	{
 		ULONG Protection = GetSectionProtection(ImageSectionHeader[i].Characteristics);
-		if (_stricmp(".reloc", (CHAR*)ImageSectionHeader[i].Name) == 0)
+		if (_stricmp(".reloc", (char*)ImageSectionHeader[i].Name) == 0)
 		{
 			#ifdef DEBUG_MESSAGES_ENABLED
 			DebugShout("[ProcessSections] Skipping \".reloc\" section.");
@@ -1705,4 +1814,65 @@ TCHAR* CRemoteLoader::LastErrorString()
 				(LPTSTR)&returnBuffer, 0, NULL);
 
 	return returnBuffer;
+}
+
+LONG CRemoteLoader::GetProcessorArchitecture()
+{
+	static LONG volatile nProcessorArchitecture = -1;
+	if (nProcessorArchitecture == -1)
+	{
+		SYSTEM_PROCESSOR_INFORMATION sProcInfo;
+		NTSTATUS nNtStatus;
+
+		tRtlGetNativeSystemInformation fnRtlGetNativeSystemInformation = (tRtlGetNativeSystemInformation)Utils::getProcAddress((HMODULE)Utils::getLocalModuleHandle("ntdll.dll"), "RtlGetNativeSystemInformation");
+
+		nNtStatus = fnRtlGetNativeSystemInformation((SYSTEM_INFORMATION_CLASS)SystemProcessorInformation, &sProcInfo, sizeof(sProcInfo), NULL);
+		if (nNtStatus == STATUS_NOT_IMPLEMENTED)
+		{
+			nNtStatus = fnNTQSI((SYSTEM_INFORMATION_CLASS)SystemProcessorInformation, &sProcInfo, sizeof(sProcInfo), NULL);
+		}
+		if (NT_SUCCESS(nNtStatus))
+			_InterlockedExchange(&nProcessorArchitecture, (LONG)(sProcInfo.ProcessorArchitecture));
+	}
+	return nProcessorArchitecture;
+}
+
+int CRemoteLoader::GetProcessPlatform()
+{
+	if (m_hProcess == (HANDLE)((LONG_PTR)-1))
+	{
+		#if defined(_M_IX86)
+		return 1; // ProcessPlatformX86;
+		#elif defined(_M_X64)
+		return 2; // ProcessPlatformX64
+		#endif
+	}
+	switch (GetProcessorArchitecture())
+	{
+	case PROCESSOR_ARCHITECTURE_INTEL:
+		return 1; // ProcessPlatformX86;
+	case PROCESSOR_ARCHITECTURE_AMD64:
+		//check on 64-bit platforms
+		ULONG_PTR nWow64;
+		NTSTATUS nNtStatus;
+	
+		nNtStatus = fnNTQIP(m_hProcess, ProcessWow64Information, &nWow64, sizeof(nWow64), NULL);
+		if (NT_SUCCESS(nNtStatus))
+		{
+			#if defined(_M_IX86)
+			return (nWow64 == 0) ? 2 : 1;
+			#elif defined(_M_X64)
+			return (nWow64 != 0) ? 1 : 2;
+			#endif
+		}
+		#if defined(_M_IX86)
+		return 1;
+		#elif defined(_M_X64)
+		return 2;
+		#endif
+		break;
+		//case PROCESSOR_ARCHITECTURE_IA64:
+		//case PROCESSOR_ARCHITECTURE_ALPHA64:
+	}
+	return STATUS_NOT_SUPPORTED;
 }

@@ -1,5 +1,4 @@
 #include "Injector.h"
-#include "nt_ddk.h"
 
 Injector::Injector() :
 processName("default"),
@@ -52,104 +51,6 @@ Injector::Injector(Injector& other)
 	DLL = other.DLL;
 }
 
-__forceinline PLDR_DATA_ENTRY firstLdrDataEntry()
-{
-	_TEB* teb = (_TEB*)NtCurrentTeb();
-	_PEB* peb = (_PEB*)teb->ProcessEnvironmentBlock;
-	PPEB_LDR_DATA ldrData = peb->Ldr;
-	PLDR_DATA_ENTRY ret = (PLDR_DATA_ENTRY)ldrData->InInitializationOrderModuleList.Flink;
-	return (PLDR_DATA_ENTRY)ret;
-}
-
-static void* getLocalModuleHandle(const char* moduleName)
-{
-	void* dwModuleHandle = 0;
-	PLDR_DATA_ENTRY cursor = firstLdrDataEntry();
-	while (cursor->BaseAddress)  {
-#ifdef _DEBUG
-		//printf("Module [%S] loaded at [%p] with entrypoint at [%p]\n", cursor->BaseDllName.Buffer, cursor->BaseAddress, cursor->EntryPoint);
-#endif
-		char strBaseDllName[MAX_PATH] = { 0 };
-		size_t bytesCopied = 0;
-		wcstombs_s(&bytesCopied, strBaseDllName, cursor->BaseDllName.Buffer, MAX_PATH);
-		if (_stricmp(strBaseDllName, moduleName) == 0) {
-			dwModuleHandle = cursor->BaseAddress;
-			break;
-		}
-		cursor = (PLDR_DATA_ENTRY)cursor->InMemoryOrderModuleList.Flink;
-	}
-	return dwModuleHandle;
-}
-
-static void* getProcAddress(HMODULE module, const char *proc_name)
-{
-	char *modb = (char *)module;
-
-	IMAGE_DOS_HEADER *dos_header = (IMAGE_DOS_HEADER *)modb;
-	IMAGE_NT_HEADERS *nt_headers = (IMAGE_NT_HEADERS *)(modb + dos_header->e_lfanew);
-
-	IMAGE_OPTIONAL_HEADER *opt_header = &nt_headers->OptionalHeader;
-	IMAGE_DATA_DIRECTORY *exp_entry = (IMAGE_DATA_DIRECTORY *)(&opt_header->DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]);
-	IMAGE_EXPORT_DIRECTORY *exp_dir = (IMAGE_EXPORT_DIRECTORY *)(modb + exp_entry->VirtualAddress);
-
-	ULONG_PTR* func_table = (ULONG_PTR*)(modb + exp_dir->AddressOfFunctions);
-	WORD* ord_table = (WORD *)(modb + exp_dir->AddressOfNameOrdinals);
-	ULONG_PTR* name_table = (ULONG_PTR*)(modb + exp_dir->AddressOfNames);
-
-	void *address = NULL;
-	DWORD i;
-
-	/* is ordinal? */
-	if (((ULONG_PTR)proc_name >> 16) == 0)
-	{
-		WORD ordinal = LOWORD(proc_name);
-		ULONG_PTR ord_base = exp_dir->Base;
-		/* is valid ordinal? */
-		if (ordinal < ord_base || ordinal > ord_base + exp_dir->NumberOfFunctions)
-			return NULL;
-
-		/* taking ordinal base into consideration */
-		address = (void*)(modb + func_table[ordinal - ord_base]);
-	}
-	else
-	{
-		/* import by name */
-		for (i = 0; i < exp_dir->NumberOfNames; i++)
-		{
-			/* name table pointers are rvas */
-			char* procEntryName = (char*)(modb + (ULONG_PTR)name_table[i]);
-			if (_stricmp(proc_name, procEntryName) == 0)
-			{
-				address = (void*)(modb + func_table[ord_table[i]]);
-				break;
-			}
-		}
-	}
-	/* is forwarded? */
-	if ((char *)address >= (char*)exp_dir && (char*)address < (char*)exp_dir + exp_entry->Size)
-	{
-		char *dll_name, *func_name;
-		HMODULE frwd_module;
-		dll_name = _strdup((char*)address);
-		if (!dll_name)
-			return NULL;
-		address = NULL;
-		func_name = strchr(dll_name, '.');
-		*func_name++ = 0;
-
-		/* is already loaded? */
-		frwd_module = (HMODULE)getLocalModuleHandle(dll_name);
-		//if (!frwd_module)
-		//frwd_module = LoadLibrary(dll_name);
-
-		if (frwd_module)
-			address = getProcAddress(frwd_module, func_name);
-
-		free(dll_name);
-	}
-	return address;
-}
-
 DWORD Injector::GetProcessIdByName(const char* process)
 {
 	ULONG cbBuffer = 131072;
@@ -159,8 +60,8 @@ DWORD Injector::GetProcessIdByName(const char* process)
 
 	DWORD processId_ = 0;
 
-	HMODULE hNtdll = (HMODULE)getLocalModuleHandle("ntdll.dll");
-	tNTQSI fpQSI = (tNTQSI)getProcAddress(hNtdll, "NtQuerySystemInformation");
+	HMODULE hNtdll = (HMODULE)Utils::getLocalModuleHandle("ntdll.dll");
+	tNTQSI fpQSI = (tNTQSI)Utils::getProcAddress(hNtdll, "NtQuerySystemInformation");
 
 	std::string name(process);
 	if (!strstr(process, ".exe"))
@@ -188,18 +89,20 @@ DWORD Injector::GetProcessIdByName(const char* process)
 		}
 		else
 		{
+			check = false;
+
 			PSYSTEM_PROCESSES infoP = (PSYSTEM_PROCESSES)pBuffer;
 			while (infoP)
 			{
 				char pName[256];
 				memset(pName, 0, sizeof(pName));
 				WideCharToMultiByte(0, 0, infoP->ProcessName.Buffer, infoP->ProcessName.Length, pName, 256, NULL, NULL);
+
 				if (_stricmp(name.c_str(), pName) == 0)
 				{
 					//printf("infoP: 0x%llp", infoP);
 					processId_ = infoP->ProcessId;
 					found = true;
-					check = false;
 
 					#ifdef _DEBUG
 					printf("FOUND %S > processid: %i (0x%X)\n", infoP->ProcessName.Buffer, processId_, processId_);
@@ -321,8 +224,8 @@ void Injector::timerCallback()
 
 	DWORD processId_ = 0;
 
-	HMODULE hNtdll = (HMODULE)getLocalModuleHandle("ntdll.dll");
-	tNTQSI fpQSI = (tNTQSI)getProcAddress(hNtdll, "NtQuerySystemInformation");
+	HMODULE hNtdll = (HMODULE)Utils::getLocalModuleHandle("ntdll.dll");
+	tNTQSI fpQSI = (tNTQSI)Utils::getProcAddress(hNtdll, "NtQuerySystemInformation");
 
 	bool found = false;
 	while (!found)

@@ -16,7 +16,7 @@ public:
 
 	BOOL CheckValidProcessExtension(const char* name);
 	DWORD GetProcessIdByName(const char* process);
-	void EnableDebugPriv();
+	void EnableDebugPriv() { Utils::SetDebugPrivilege(TRUE); };
 	void SetProcessName(String name);
 	void SetDLLName(String name);
 	void SetManualMap(bool bManualMap);

@@ -46,6 +46,8 @@ public:
 class CRemoteLoader : public CRemoteCode
 {
 public:
+	void							SetProcess(HANDLE hProcess);
+
 	HMODULE							LoadLibraryByPathA(LPCCH Path);
 	HMODULE							LoadLibraryByPathW(LPCWCH Path);
 	HMODULE							LoadLibraryByPathIntoMemoryA(LPCCH Path, BOOL PEHeader);
@@ -64,12 +66,7 @@ protected:
 	IMAGE_DOS_HEADER*				ToDos(PVOID BaseAddress);
 	IMAGE_NT_HEADERS*				ToNts(PVOID BaseAddress);
 
-#ifdef _WIN64
 	PVOID							RvaToPointer(ULONG RVA, PVOID BaseAddress);
-#else
-	PVOID							RvaToPointer(DWORD RVA, PVOID BaseAddress);
-#endif
-	
 
 	PVOID							ImageDirectoryEntryToData( PVOID BaseAddress, USHORT DataDirectory );
 	BOOL							CallEntryPoint( PVOID BaseAddress, FARPROC Entrypoint );
@@ -88,6 +85,10 @@ private:
 	ModuleFile						InitModuleFile(LPCCH FileName);
 	BOOL							FreeModuleFile(ModuleFile Handle);
 	TCHAR*							LastErrorString();
+
+	LONG							GetProcessorArchitecture();
+	int								GetProcessPlatform();
+
 };
 
 
