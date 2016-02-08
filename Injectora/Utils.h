@@ -8,6 +8,12 @@
 
 namespace Utils
 {
+	// Align value
+	static inline size_t Align(size_t val, size_t alignment)
+	{
+		return (val % alignment == 0) ? val : (val / alignment + 1) * alignment;
+	}
+
 	static BOOL IsElevated()
 	{
 		BOOL fRet = false;

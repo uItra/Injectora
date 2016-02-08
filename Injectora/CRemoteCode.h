@@ -98,10 +98,15 @@ public:
 
 protected:
 	HANDLE					CreateRemoteThreadInProcess(LPTHREAD_START_ROUTINE lpThread, LPVOID lpParam);
+
+	void					Prologue64();
+
 	void					AddByteToBuffer(unsigned char in);
 	void					AddLongToBuffer(unsigned long in);
 	void					AddLong64ToBuffer(unsigned __int64 in);
 	void					PushAllParameters(bool right_to_left = true);
+
+	void					Epilogue64();
 
 protected:
 	HANDLE					m_hProcess;
