@@ -16,10 +16,20 @@ struct ModuleFile
 	PVOID							Buffer;
 	INT								Size;
 
-	BOOL IsValid()
+	BOOL IsValid() { return ( Buffer && Size ); }
+};
+
+// Relocation block information
+struct RelocData
+{
+	ULONG VirtualAddress;
+	ULONG SizeOfBlock;
+
+	struct
 	{
-		return ( Buffer && Size );
-	}
+		WORD Offset : 12;
+		WORD Type : 4;
+	}Item[1];
 };
 
 class ExportData
@@ -74,11 +84,11 @@ protected:
 	ExportData						GetExport(PVOID BaseAddress, const char* name_ord, const char* baseModule = "");
 	BOOL							ProcessDelayedImportTable(PVOID BaseAddress, PVOID RemoteAddress);
 	BOOL							ProcessImportTable( PVOID BaseAddress, PVOID RemoteAddress);
-	BOOL							ProcessRelocation( INT ImageBaseDelta, WORD Data, PBYTE RelocationBase );
+	BOOL							ProcessRelocation( ULONG ImageBaseDelta, WORD Data, PBYTE RelocationBase);
 	BOOL							ProcessRelocations( PVOID BaseAddress, PVOID RemoteAddress );
 	BOOL							ProcessTlsEntries( PVOID BaseAddress, PVOID RemoteAddress );
 	ULONG							GetSectionProtection( ULONG Characteristics );
-	BOOL							ProcessSection( BYTE* Name, PVOID BaseAddress, PVOID RemoteAddress, ULONG RawData, ULONG VirtualAddress, ULONG RawSize, ULONG VirtualSize, ULONG ProtectFlag );
+	BOOL							ProcessSection( BYTE* Name, PVOID BaseAddress, PVOID RemoteAddress, ULONGLONG RawData, ULONGLONG VirtualAddress, ULONGLONG RawSize, ULONGLONG VirtualSize, ULONG ProtectFlag);
 	BOOL							ProcessSections( PVOID BaseAddress, PVOID RemoteAddress, BOOL MapPEHeader );
 
 private:

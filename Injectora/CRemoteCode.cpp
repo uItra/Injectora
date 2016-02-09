@@ -447,9 +447,35 @@ void CRemoteCode::DestroyRemoteThreadBuffer()
 	m_CurrentRemoteThreadBuffer.clear();
 }
 
+__inline HANDLE NtCreateThreadEx(HANDLE hProcess, LPVOID lpRemoteThreadStart, LPVOID lpParam)
+{
+	NTCREATETHREADEX fnNtCreateThreadEx = (NTCREATETHREADEX)GetProcAddress(GetModuleHandle("ntdll.dll"), "NtCreateThreadEx");
+	if (fnNtCreateThreadEx == NULL)
+		return NULL;
+
+	HANDLE hRemoteThread = NULL;
+	HRESULT hRes = 0;
+
+	if (!NT_SUCCESS(fnNtCreateThreadEx(&hRemoteThread, THREAD_ALL_ACCESS, NULL, hProcess, lpRemoteThreadStart, lpParam, 0, 0, 0x1000, 0x100000, NULL)))
+	{
+		return NULL;
+	}
+
+	return hRemoteThread;
+}
+
 HANDLE CRemoteCode::CreateRemoteThreadInProcess(LPTHREAD_START_ROUTINE lpThread, LPVOID lpParam)
 {
-	return CreateRemoteThread(m_hProcess, NULL, NULL, lpThread, lpParam, NULL, NULL);
+	printf("lpThread: 0x%llp\n", lpThread);
+
+	if (GetProcAddress(GetModuleHandle("ntdll.dll"), "NtCreateThreadEx"))
+	{
+		return NtCreateThreadEx(m_hProcess, lpThread, lpParam);
+	}
+	else
+	{
+		return CreateRemoteThread(m_hProcess, NULL, NULL, lpThread, lpParam, NULL, NULL);
+	}	
 }
 
 void CRemoteCode::Prologue64()

@@ -635,11 +635,62 @@ typedef struct _PROCESSINFO
 	TCHAR   szCmdLine[MAX_UNICODE_PATH];
 } PROCESSINFO;
 
+typedef struct _PS_ATTRIBUTE
+{
+	ULONG Attribute;
+	SIZE_T Size;
+	union
+	{
+		ULONG Value;
+		PVOID ValuePtr;
+	};
+	PSIZE_T ReturnLength;
+} PS_ATTRIBUTE, *PPS_ATTRIBUTE;
+
+typedef struct _PS_ATTRIBUTE_LIST
+{
+	SIZE_T TotalLength;
+	PS_ATTRIBUTE Attributes[1];
+} PS_ATTRIBUTE_LIST, *PPS_ATTRIBUTE_LIST;
+
+typedef struct _OBJECT_ATTRIBUTES
+{
+	ULONG Length;
+	HANDLE RootDirectory;
+	PUNICODE_STRING ObjectName;
+	ULONG Attributes;
+	PVOID SecurityDescriptor; // PSECURITY_DESCRIPTOR;
+	PVOID SecurityQualityOfService; // PSECURITY_QUALITY_OF_SERVICE
+} OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
+
+typedef struct _OBJECT_ATTRIBUTES64
+{
+	ULONG Length;
+	ULONG64 RootDirectory;
+	ULONG64 ObjectName;
+	ULONG Attributes;
+	ULONG64 SecurityDescriptor;
+	ULONG64 SecurityQualityOfService;
+} OBJECT_ATTRIBUTES64, *POBJECT_ATTRIBUTES64;
+
 
 typedef NTSTATUS(NTAPI *tRtlGetNativeSystemInformation)(SYSTEM_INFORMATION_CLASS SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
 typedef NTSTATUS(NTAPI *tNTQIP)(HANDLE ProcessHandle, PROCESSINFOCLASS ProcessInformationClass, PVOID ProcessInformation, ULONG ProcessInformationLength, PULONG ReturnLength);
 typedef NTSTATUS(NTAPI *tNTQSI)(ULONG SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
-
+typedef NTSTATUS(WINAPI *NTCREATETHREADEX)
+(
+__out PHANDLE ThreadHandle,
+__in ACCESS_MASK DesiredAccess,
+__in_opt POBJECT_ATTRIBUTES64 ObjectAttributes,
+__in HANDLE ProcessHandle,
+__in PVOID StartRoutine,
+__in_opt PVOID Argument,
+__in ULONG CreateFlags, // THREAD_CREATE_FLAGS_*
+__in_opt ULONG_PTR ZeroBits,
+__in_opt SIZE_T StackSize,
+__in_opt SIZE_T MaximumStackSize,
+__in_opt PPS_ATTRIBUTE_LIST AttributeList
+);
 
 typedef struct _VM_COUNTERS
 {

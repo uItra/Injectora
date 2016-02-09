@@ -218,7 +218,6 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryFromMemory] Invalid Image: No IMAGE_NT_HEADERS");
 		#endif
-
 		return NULL;
 	}
 
@@ -231,30 +230,26 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryFromMemory] Invalid Image: No Sections");
 		#endif
-
 		return NULL;
 	}
 
 	if ((ImageNtHeaders->OptionalHeader.ImageBase % 4096) != 0)
 	{
-
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryFromMemory] Invalid Image: Not Page Aligned");
 		#endif
-
 		return NULL;
 	}
 
-	if (ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].Size)
-	{
-		if (ImageDirectoryEntryToData(BaseAddress, IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR))
-		{
-			#ifdef DEBUG_MESSAGES_ENABLED
-			DebugShout("[LoadLibraryFromMemory] This method is not supported for Managed executables!");
-			#endif
 
-			return NULL;
-		}
+	if (ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR].Size 
+		&& ImageDirectoryEntryToData(BaseAddress, IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR))
+	{
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[LoadLibraryFromMemory] This method is not supported for Managed executables!");
+		#endif
+
+		return NULL;
 	}
 	
 	#ifdef DEBUG_MESSAGES_ENABLED
@@ -269,7 +264,6 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryFromMemory] Failed to allocate remote memory for module!");
 		#endif
-
 		return NULL;
 	}
 
@@ -283,7 +277,6 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryFromMemory] Failed to fix imports!");
 		#endif
-
 		return NULL;
 	}
 
@@ -292,11 +285,8 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryFromMemory] Failed to fix delayed imports!");
 		#endif
-
 		return NULL;
 	}
-
-	printf("Processed Import Tables Successfully!!\n");
 
 	#ifdef DEBUG_MESSAGES_ENABLED
 	DebugShout("[LoadLibraryFromMemory] Fixed Imports!");
@@ -307,9 +297,7 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryFromMemory] Failed to process relocations!");
 		#endif
-
 		RemoteFreeMemory(AllocatedRemoteMemory, SizeOfModule);
-
 		return NULL;
 	}
 
@@ -707,7 +695,7 @@ void* CRemoteLoader::RvaToPointer(ULONG RVA, PVOID BaseAddress)
 	PIMAGE_NT_HEADERS ImageNtHeaders = ToNts(BaseAddress);
 	if (ImageNtHeaders == 0)
 		return 0;
-	return ImageRvaToVa(ImageNtHeaders, BaseAddress, RVA, 0);
+	return ::ImageRvaToVa(ImageNtHeaders, BaseAddress, RVA, 0);
 }
 
 PVOID CRemoteLoader::ImageDirectoryEntryToData(PVOID BaseAddress, USHORT DataDirectory)
@@ -1300,19 +1288,11 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 	return FALSE;
 }
 
-BOOL CRemoteLoader::ProcessRelocation(INT ImageBaseDelta, WORD Data, PBYTE RelocationBase)
+BOOL CRemoteLoader::ProcessRelocation(ULONG ImageBaseDelta, WORD Data, PBYTE RelocationBase)
 {
 	BOOL bReturn = TRUE;
 	switch (IMR_RELTYPE(Data))
 	{
-	case IMAGE_REL_BASED_ABSOLUTE: // No action required
-	{
-		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_ABSOLUTE no need to process");
-		#endif
-
-		break;
-	}
 	case IMAGE_REL_BASED_HIGH:
 	{
 		SHORT* Raw = (SHORT*)(RelocationBase + IMR_RELOFFSET(Data));
@@ -1341,8 +1321,8 @@ BOOL CRemoteLoader::ProcessRelocation(INT ImageBaseDelta, WORD Data, PBYTE Reloc
 	}
 	case IMAGE_REL_BASED_HIGHLOW:
 	{
-		DWORD32* Raw = (DWORD32*)(RelocationBase + IMR_RELOFFSET(Data));
-		DWORD32 Backup = *Raw;
+		size_t* Raw = (size_t*)(RelocationBase + IMR_RELOFFSET(Data));
+		size_t Backup = *Raw;
 
 		*Raw += ImageBaseDelta;
 
@@ -1352,51 +1332,10 @@ BOOL CRemoteLoader::ProcessRelocation(INT ImageBaseDelta, WORD Data, PBYTE Reloc
 
 		break;
 	}
-	case IMAGE_REL_BASED_HIGHADJ: // no action required
-	{
-		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_HIGHADJ no need to process");
-		#endif
-
-		break;
-	}
-#ifdef WIN_ARM
-	case IMAGE_REL_BASED_THUMB_MOV32: // arm shit
-	{
-		register DWORD dwInstruction;
-		register DWORD dwAddress;
-		register WORD wImm;
-		// get the MOV.T instructions DWORD value (We add 4 to the offset to go past the first MOV.W which handles the low word)
-		dwInstruction = *(DWORD*)(RelocationBase + IMR_RELOFFSET(Data) + sizeof(DWORD));
-		// flip the words to get the instruction as expected
-		dwInstruction = MAKELONG( HIWORD(dwInstruction), LOWORD(dwInstruction) );
-		// sanity chack we are processing a MOV instruction...
-		if ((dwInstruction & (DWORD)(0xFBF08000)) == 0xF2C00000)
-		{
-			// pull out the encoded 16bit value (the high portion of the address-to-relocate)
-			wImm = (WORD)(dwInstruction & 0x000000FF);
-			wImm |= (WORD)((dwInstruction & 0x00007000) >> 4);
-			wImm |= (WORD)((dwInstruction & 0x04000000) >> 15);
-			wImm |= (WORD)((dwInstruction & 0x000F0000) >> 4);
-			// apply the relocation to the target address
-			dwAddress = ((WORD)HIWORD(ImageBaseDelta) + wImm) & 0xFFFF;
-			// now create a new instruction with the same opcode and register param.
-			dwInstruction = (DWORD)(dwInstruction & (DWORD)(0xFBF08F00));
-			// patch in the relocated address...
-			dwInstruction |= (DWORD)(dwAddress & 0x00FF);
-			dwInstruction |= (DWORD)(dwAddress & 0x0700) << 4;
-			dwInstruction |= (DWORD)(dwAddress & 0x0800) << 15;
-			dwInstruction |= (DWORD)(dwAddress & 0xF000) << 4;
-			// now flip the instructions words and patch back into the code...
-			*(DWORD *)(RelocationBase + IMR_RELOFFSET(Data) + sizeof(DWORD)) = MAKELONG(HIWORD(dwInstruction), LOWORD(dwInstruction));
-		}
-		break;
-	}
-#endif
 	case IMAGE_REL_BASED_DIR64:
 	{
-		DWORD64* Raw = (DWORD64*)(RelocationBase + IMR_RELOFFSET(Data));
-		DWORD64 Backup = *Raw;
+		ULONGLONG* Raw = (ULONGLONG*)(RelocationBase + IMR_RELOFFSET(Data));
+		ULONGLONG Backup = *Raw;
 
 		*Raw += ImageBaseDelta;
 
@@ -1404,6 +1343,20 @@ BOOL CRemoteLoader::ProcessRelocation(INT ImageBaseDelta, WORD Data, PBYTE Reloc
 		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_DIR64 (0x%X) -> (0x%X)", Backup, *Raw);
 		#endif
 
+		break;
+	}
+	case IMAGE_REL_BASED_ABSOLUTE: // No action required
+	{
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_ABSOLUTE no need to process");
+		#endif
+		break;
+	}
+	case IMAGE_REL_BASED_HIGHADJ: // no action required
+	{
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_HIGHADJ no need to process");
+		#endif
 		break;
 	}
 	default:
@@ -1433,13 +1386,17 @@ BOOL CRemoteLoader::ProcessRelocations(PVOID BaseAddress, PVOID RemoteAddress)
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[ProcessRelocations] Relocations have been stripped from this executable, continuing anyway...");
 		#endif
-
 		return TRUE;
 	}
 	else
 	{
-		DWORD ImageBaseDelta = (DWORD)((DWORD_PTR)RemoteAddress - (DWORD_PTR)ImageNtHeaders->OptionalHeader.ImageBase);
-		
+		size_t ImageBaseDelta = (size_t)((size_t)RemoteAddress - (size_t)ImageNtHeaders->OptionalHeader.ImageBase);
+		if (ImageBaseDelta == 0) // No need to relocate
+		{
+			DebugShout("[ProcessRelocations] No need for relocation");
+			return TRUE;
+		}
+
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[ProcessRelocations] VirtualAddress (0x%X)", ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
 		#endif
@@ -1453,53 +1410,179 @@ BOOL CRemoteLoader::ProcessRelocations(PVOID BaseAddress, PVOID RemoteAddress)
 		if (RelocationSize)
 		{
 			PIMAGE_BASE_RELOCATION RelocationDirectory = (PIMAGE_BASE_RELOCATION)RvaToPointer(ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress, BaseAddress);
-			if (RelocationDirectory)
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[ProcessRelocations] RelocationDirectory (0x%X)", RelocationDirectory);
+			#endif
+			
+			size_t RelocationEnd = (size_t)RelocationDirectory + RelocationSize;
+
+			RelocData* RelocationStart = reinterpret_cast<RelocData*>(RelocationDirectory);
+			if (RelocationStart == nullptr)
 			{
 				#ifdef DEBUG_MESSAGES_ENABLED
-				DebugShout("[ProcessRelocations] RelocationDirectory (0x%X)", RelocationDirectory);
+				DebugShout("[ProcessRelocations] Relocations have have not been found in this executable, continuing anyway...");
 				#endif
-
-				DWORD_PTR RelocationEnd = (DWORD_PTR)RelocationDirectory + RelocationSize;
-
-				while ((DWORD_PTR)RelocationDirectory < RelocationEnd)
-				{
-					PBYTE RelocBase = (PBYTE)RvaToPointer(RelocationDirectory->VirtualAddress, BaseAddress);
-
-					DWORD NumRelocs = (RelocationDirectory->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
-
-					PWORD RelocationData = (WORD*)(RelocationDirectory + 1);
-
-					#ifdef DEBUG_MESSAGES_ENABLED
-					DebugShout("[ProcessRelocations] RelocationDirectory (0x%X)", RelocationDirectory);
-					DebugShout("[ProcessRelocations] RelocationData (0x%X)", RelocationData);
-					#endif
-
-					for (DWORD i = 0; i < NumRelocs; ++i, ++RelocationData)
-					{
-						if (ProcessRelocation(ImageBaseDelta, *RelocationData, RelocBase) == FALSE)
-						{
-							#ifdef DEBUG_MESSAGES_ENABLED
-							DebugShout("[ProcessRelocations] Unable to process relocation [%i]", i);
-							#endif
-						}
-					}
-					RelocationDirectory = (PIMAGE_BASE_RELOCATION)(RelocationData);
-				}
+				return TRUE;
 			}
-			else
+
+			while ((size_t)RelocationStart < RelocationEnd && RelocationStart->SizeOfBlock)
 			{
-				#ifdef DEBUG_MESSAGES_ENABLED
-				DebugShout("[ProcessRelocations] Relocations have a size, but the pointer is invalid");
-				#endif
-				return FALSE;
+				PBYTE RelocBase = static_cast<PBYTE>(RvaToPointer(RelocationDirectory->VirtualAddress, BaseAddress));
+				DWORD NumRelocs = (RelocationStart->SizeOfBlock - 8) >> 1; //sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
+
+				for (DWORD i = 0; i < NumRelocs; ++i)
+				{
+					WORD fixtype = (RelocationStart->Item[i].Type);              // fixup type
+					WORD fixoffset = (RelocationStart->Item[i].Offset) % 4096;   // offset in 4K block
+
+					// no fixup required
+					if (fixtype == IMAGE_REL_BASED_ABSOLUTE || fixtype == IMAGE_REL_BASED_HIGHADJ)
+						continue;
+
+					// add delta 
+					if (fixtype == IMAGE_REL_BASED_HIGHLOW || fixtype == IMAGE_REL_BASED_DIR64)
+					{
+						size_t* fixRVA = reinterpret_cast<size_t*>((size_t)RelocBase + fixoffset);
+						*fixRVA += ImageBaseDelta;
+					}
+					else
+					{
+						#ifdef DEBUG_MESSAGES_ENABLED
+						DebugShout("[ProcessRelocation] UNKNOWN RELOCATION (0x%X)", fixtype);
+						#endif
+						return FALSE;
+					}
+				}
+
+				RelocationStart = reinterpret_cast<RelocData*>(reinterpret_cast<size_t>(RelocationStart)+RelocationStart->SizeOfBlock);
 			}
 		}
 		else
 		{
 			#ifdef DEBUG_MESSAGES_ENABLED
-			DebugShout("[ProcessRelocations] Relocations have have not been found in this executable, continuing anyway...");
+			DebugShout("[ProcessRelocations] Relocations have a size, but the pointer is invalid");
 			#endif
-			return TRUE;
+			return FALSE;
+		}
+	}
+
+	return TRUE;
+}
+
+ULONG CRemoteLoader::GetSectionProtection(ULONG Characteristics)
+{
+	ULONG Result = 0;
+	if (Characteristics & IMAGE_SCN_MEM_NOT_CACHED)
+		Result |= PAGE_NOCACHE;
+
+	if (Characteristics & IMAGE_SCN_MEM_EXECUTE)
+	{
+		if (Characteristics & IMAGE_SCN_MEM_READ)
+		{
+			if (Characteristics & IMAGE_SCN_MEM_WRITE)
+				Result |= PAGE_EXECUTE_READWRITE;
+			else
+				Result |= PAGE_EXECUTE_READ;
+		}
+		else if (Characteristics & IMAGE_SCN_MEM_WRITE)
+			Result |= PAGE_EXECUTE_WRITECOPY;
+		else
+			Result |= PAGE_EXECUTE;
+	}
+	else if (Characteristics & IMAGE_SCN_MEM_READ)
+	{
+		if (Characteristics & IMAGE_SCN_MEM_WRITE)
+			Result |= PAGE_READWRITE;
+		else
+			Result |= PAGE_READONLY;
+	}
+	else if (Characteristics & IMAGE_SCN_MEM_WRITE)
+		Result |= PAGE_WRITECOPY;
+	else
+		Result |= PAGE_NOACCESS;
+
+	return Result;
+}
+
+BOOL CRemoteLoader::ProcessSection(BYTE* Name, PVOID BaseAddress, PVOID RemoteAddress, ULONGLONG RawData, ULONGLONG VirtualAddress, ULONGLONG RawSize, ULONGLONG VirtualSize, ULONG ProtectFlag)
+{
+	#ifdef DEBUG_MESSAGES_ENABLED
+	DebugShout("[ProcessSection] ProcessSection( %s, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X )", Name, BaseAddress, RemoteAddress, RawData, VirtualAddress, RawSize, VirtualSize, ProtectFlag);
+	#endif
+
+	if (WriteProcessMemory(m_hProcess, MakePtr(PVOID, RemoteAddress, VirtualAddress), MakePtr(PVOID, BaseAddress, RawData), RawSize, NULL) == FALSE)
+	{
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[ProcessSection] Failed to write memory for [%s] -> [%s]", Name, LastErrorString());
+		#endif
+		return FALSE;
+	}
+
+	//DWORD dwOldProtect = NULL;
+	//if (VirtualProtectEx(m_hProcess, MakePtr(PVOID, RemoteAddress, VirtualAddress), VirtualSize, ProtectFlag, &dwOldProtect) == FALSE)
+	//{
+	//	#ifdef DEBUG_MESSAGES_ENABLED
+	//	DebugShout("[ProcessSection] Failed to protect memory for [%s] -> [%s]", Name, LastErrorString());
+	//	#endif
+	//	return FALSE;
+	//}
+
+	return TRUE;
+}
+
+BOOL CRemoteLoader::ProcessSections(PVOID BaseAddress, PVOID RemoteAddress, BOOL MapPEHeader)
+{
+	PIMAGE_NT_HEADERS ImageNtHeaders = ToNts(BaseAddress);
+	if (ImageNtHeaders == NULL)
+		return FALSE;
+
+	// Writing the PE header
+	if (MapPEHeader)
+	{
+		if (WriteProcessMemory(m_hProcess, RemoteAddress, BaseAddress, ImageNtHeaders->OptionalHeader.SizeOfHeaders, NULL) == FALSE)
+		{
+		#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[ProcessSections] Failed to map PE header!");
+		}
+		else
+		{
+			DebugShout("[ProcessSections] Mapped PE Header successfully!");
+		#endif
+		}
+	}
+	#ifdef DEBUG_MESSAGES_ENABLED
+	else
+	{
+		DebugShout("[ProcessSections] PE Header mapping disabled, skipping.");
+	}
+	#endif
+
+	// Write individual sections
+	PIMAGE_SECTION_HEADER ImageSectionHeader =  (PIMAGE_SECTION_HEADER)((ULONG_PTR)&ImageNtHeaders->OptionalHeader + ImageNtHeaders->FileHeader.SizeOfOptionalHeader);
+	for (DWORD i = 0; i < ImageNtHeaders->FileHeader.NumberOfSections; i++)
+	{	
+		if (_stricmp(".reloc", (char*)ImageSectionHeader[i].Name) == 0)
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[ProcessSections] Skipping \".reloc\" section.");
+			#endif
+			continue; // NOPE, do not process the .reloc section
+		}
+
+		// Skip discardable sections
+		if (ImageSectionHeader[i].Characteristics & (IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE | IMAGE_SCN_MEM_EXECUTE))
+		{
+			ULONG Protection = GetSectionProtection(ImageSectionHeader[i].Characteristics);
+			if (ProcessSection(ImageSectionHeader[i].Name, BaseAddress, RemoteAddress, ImageSectionHeader[i].PointerToRawData, ImageSectionHeader[i].VirtualAddress, ImageSectionHeader[i].SizeOfRawData, ImageSectionHeader[i].Misc.VirtualSize, Protection) == FALSE)
+			{
+			#ifdef DEBUG_MESSAGES_ENABLED
+				DebugShout("[ProcessSections] Failed [%s]", ImageSectionHeader[i].Name);
+			}
+			else
+			{
+				DebugShout("[ProcessSections] Success [%s]", ImageSectionHeader[i].Name);
+			#endif
+			}
 		}
 	}
 
@@ -1516,7 +1599,7 @@ BOOL CRemoteLoader::ProcessTlsEntries(PVOID BaseAddress, PVOID RemoteAddress)
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[ProcessTlsEntries] No Tls entries to process");
 		#endif
-		return TRUE; // Success when there is no Tls Entries
+		return TRUE; // Success when there is no Tls Entries <--- always hits here
 	}
 
 	#ifdef DEBUG_MESSAGES_ENABLED
@@ -1571,146 +1654,6 @@ BOOL CRemoteLoader::ProcessTlsEntries(PVOID BaseAddress, PVOID RemoteAddress)
 	return SuccessValue;
 }
 
-ULONG CRemoteLoader::GetSectionProtection(ULONG Characteristics)
-{
-	DWORD Result = 0;
-
-	if (Characteristics & IMAGE_SCN_MEM_NOT_CACHED)
-	{
-		Result |= PAGE_NOCACHE;
-	}
-
-	if (Characteristics & IMAGE_SCN_MEM_EXECUTE)
-	{
-		if (Characteristics & IMAGE_SCN_MEM_READ)
-		{
-			if (Characteristics & IMAGE_SCN_MEM_WRITE)
-			{
-				Result |= PAGE_EXECUTE_READWRITE;
-			}
-			else
-			{
-				Result |= PAGE_EXECUTE_READ;
-			}
-		}
-		else if (Characteristics & IMAGE_SCN_MEM_WRITE)
-		{
-			Result |= PAGE_EXECUTE_WRITECOPY;
-		}
-		else
-		{
-			Result |= PAGE_EXECUTE;
-		}
-	}
-	else if (Characteristics & IMAGE_SCN_MEM_READ)
-	{
-		if (Characteristics & IMAGE_SCN_MEM_WRITE)
-		{
-			Result |= PAGE_READWRITE;
-		}
-		else
-		{
-			Result |= PAGE_READONLY;
-		}
-	}
-	else if (Characteristics & IMAGE_SCN_MEM_WRITE)
-	{
-		Result |= PAGE_WRITECOPY;
-	}
-	else
-	{
-		Result |= PAGE_NOACCESS;
-	}
-
-	return Result;
-}
-
-BOOL CRemoteLoader::ProcessSection(BYTE* Name, PVOID BaseAddress, PVOID RemoteAddress, ULONG RawData, ULONG VirtualAddress, ULONG RawSize, ULONG VirtualSize, ULONG ProtectFlag)
-{
-	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[ProcessSection] ProcessSection( %s, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X, 0x%X )", Name, BaseAddress, RemoteAddress, RawData, VirtualAddress, RawSize, VirtualSize, ProtectFlag);
-	#endif
-
-	HANDLE hProcess = GetProcess();
-	if (hProcess == INVALID_HANDLE_VALUE)
-		hProcess = GetCurrentProcess();
-
-	if (WriteProcessMemory(hProcess, MakePtr(PVOID, RemoteAddress, VirtualAddress), MakePtr(PVOID, BaseAddress, RawData), RawSize, NULL) == FALSE)
-	{
-		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[ProcessSection] Failed to write memory for [%s] -> [%s]", Name, LastErrorString());
-		#endif
-		
-		return FALSE;
-	}
-
-	DWORD dwOldProtect = NULL;
-	if (VirtualProtectEx(hProcess, MakePtr(PVOID, RemoteAddress, VirtualAddress), VirtualSize, ProtectFlag, &dwOldProtect) == FALSE)
-	{
-		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[ProcessSection] Failed to protect memory for [%s] -> [%s]", Name, LastErrorString());
-		#endif
-		return FALSE;
-	}
-
-	return TRUE;
-}
-
-BOOL CRemoteLoader::ProcessSections(PVOID BaseAddress, PVOID RemoteAddress, BOOL MapPEHeader)
-{
-	PIMAGE_NT_HEADERS ImageNtHeaders = ToNts(BaseAddress);
-	if (ImageNtHeaders == NULL)
-		return FALSE;
-
-	// Writing the PE header
-	if (MapPEHeader)
-	{
-		if (WriteProcessMemory(m_hProcess, RemoteAddress, BaseAddress, ImageNtHeaders->OptionalHeader.SizeOfHeaders, NULL) == FALSE)
-		{
-			#ifdef DEBUG_MESSAGES_ENABLED
-			DebugShout("[ProcessSections] Failed to map PE header!");
-		}
-		else
-		{
-			DebugShout("[ProcessSections] Mapped PE Header successfully!");
-			#endif
-		}
-	}
-	#ifdef DEBUG_MESSAGES_ENABLED
-	else
-	{
-		DebugShout("[ProcessSections] PE Header mapping disabled, skipping.");
-	}
-	#endif
-
-	// Write individual sections
-	PIMAGE_SECTION_HEADER ImageSectionHeader =  (PIMAGE_SECTION_HEADER)(((ULONG_PTR)&ImageNtHeaders->OptionalHeader) + ImageNtHeaders->FileHeader.SizeOfOptionalHeader);
-	for (DWORD i = 0; i < ImageNtHeaders->FileHeader.NumberOfSections; i++)
-	{
-		ULONG Protection = GetSectionProtection(ImageSectionHeader[i].Characteristics);
-		if (_stricmp(".reloc", (char*)ImageSectionHeader[i].Name) == 0)
-		{
-			#ifdef DEBUG_MESSAGES_ENABLED
-			DebugShout("[ProcessSections] Skipping \".reloc\" section.");
-			#endif
-			continue; // NOPE, do not process the .reloc section
-		}
-
-		if (ProcessSection(ImageSectionHeader[i].Name, BaseAddress, RemoteAddress, ImageSectionHeader[i].PointerToRawData, ImageSectionHeader[i].VirtualAddress, ImageSectionHeader[i].SizeOfRawData, ImageSectionHeader[i].Misc.VirtualSize, Protection) == FALSE)
-		{
-		#ifdef DEBUG_MESSAGES_ENABLED
-			DebugShout("[ProcessSections] Failed [%s]", ImageSectionHeader[i].Name);
-		}
-		else
-		{
-			DebugShout("[ProcessSections] Success [%s]", ImageSectionHeader[i].Name);
-		#endif
-		}
-	}
-
-	return TRUE;
-}
-
 ///////////////////////
 // Private functions //
 ///////////////////////
@@ -1722,13 +1665,11 @@ ModuleFile CRemoteLoader::InitModuleFile(LPCCH FileName)
 	r.Size = 0;
 
 	HANDLE hFile = CreateFile(FileName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-
 	if (hFile == INVALID_HANDLE_VALUE)
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[InitModuleFile] CreateFile Failed");
 		#endif
-
 		return r;
 	}
 
@@ -1739,7 +1680,6 @@ ModuleFile CRemoteLoader::InitModuleFile(LPCCH FileName)
 	if (GetFileAttributesA(FileName) & FILE_ATTRIBUTE_COMPRESSED)
 	{
 		r.Size = GetCompressedFileSizeA(FileName, NULL);
-
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[InitModuleFile] File is compressed!");
 		#endif
@@ -1776,7 +1716,6 @@ ModuleFile CRemoteLoader::InitModuleFile(LPCCH FileName)
 	#endif
 
 	DWORD NumberOfBytesRead = 0;
-
 	if (ReadFile(hFile, AllocatedFile, r.Size, &NumberOfBytesRead, FALSE) == FALSE)
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
@@ -1820,11 +1759,7 @@ BOOL CRemoteLoader::FreeModuleFile(ModuleFile Handle)
 TCHAR* CRemoteLoader::LastErrorString()
 {
 	TCHAR* returnBuffer = 0;
-	
-	FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, NULL,
-				GetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-				(LPTSTR)&returnBuffer, 0, NULL);
-
+	FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, NULL, GetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)&returnBuffer, 0, NULL);
 	return returnBuffer;
 }
 
