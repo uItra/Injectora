@@ -1146,9 +1146,6 @@
     <ClInclude Include="nt_ddk.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Asm.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CRemoteCode.cpp">
@@ -2058,9 +2055,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AboutWindow.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="Asm.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
