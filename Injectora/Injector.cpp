@@ -289,6 +289,11 @@ BOOL Injector::LoadLibraryInject(String filePath)
 		oldProcessIds.add(processId);
 		CloseHandle(processHandle);
 	}
+	else
+	{
+		MessageBox(0, "LoadLibraryByPathA Failed!", "Injectora", MB_ICONERROR);
+		bRet = FALSE;
+	}
 
 	if (closeOnInject && bRet == TRUE)
 		PostQuitMessage(0);

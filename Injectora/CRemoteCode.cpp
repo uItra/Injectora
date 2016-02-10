@@ -470,7 +470,8 @@ bool CRemoteCode::ExecuteRemoteThreadBuffer(remote_thread_buffer_t thread_data, 
 	if (RemoteBuffer == NULL)
 		return false;
 
-	HANDLE hThreadHandle = CreateRemoteThreadInProcess((LPTHREAD_START_ROUTINE)RemoteBuffer, NULL);
+	printf("lpThread: 0x%llp\n", RemoteBuffer);
+	HANDLE hThreadHandle = CreateRemoteThreadInProcess((LPTHREAD_START_ROUTINE)RemoteBuffer, NULL); 
 	if (hThreadHandle == INVALID_HANDLE_VALUE)
 	{
 		RemoteFreeMemory(RemoteBuffer, thread_data.size());
@@ -510,32 +511,10 @@ void CRemoteCode::DestroyRemoteThreadBuffer()
 	m_CurrentRemoteThreadBuffer.clear();
 }
 
-__inline HANDLE NtCreateThreadEx(HANDLE hProcess, LPVOID lpRemoteThreadStart, LPVOID lpParam)
-{
-	NTCREATETHREADEX fnNtCreateThreadEx = (NTCREATETHREADEX)Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "NtCreateThreadEx");
-	if (fnNtCreateThreadEx == NULL)
-		return NULL;
-
-	HANDLE hRemoteThread = NULL;
-	HRESULT hRes = 0;
-
-	if (!NT_SUCCESS(fnNtCreateThreadEx(&hRemoteThread, THREAD_ALL_ACCESS, NULL, hProcess, lpRemoteThreadStart, lpParam, 0, 0, 0x1000, 0x100000, NULL)))
-		return NULL;
-
-	return hRemoteThread;
-}
-
 HANDLE CRemoteCode::CreateRemoteThreadInProcess(LPTHREAD_START_ROUTINE lpThread, LPVOID lpParam)
 {
-	printf("lpThread: 0x%llp\n", lpThread);
-	return CreateRemoteThread(m_hProcess, NULL, NULL, lpThread, lpParam, NULL, NULL);
-	//if (Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "NtCreateThreadEx"))
-	//{
-	//return NtCreateThreadEx(m_hProcess, lpThread, lpParam);
-	//}
-	//else
-	//{
-	//}	
+	return Utils::NtCreateThreadEx(m_hProcess, lpThread, lpParam);
+	//return CreateRemoteThread(m_hProcess, NULL, NULL, lpThread, lpParam, NULL, NULL);
 }
 
 void CRemoteCode::Prologue64()

@@ -113,8 +113,8 @@ HMODULE CRemoteLoader::LoadLibraryByPathW(LPCWCH Path)
 	DebugShout("[LoadModuleByNameW] ExecuteRemoteThreadBuffer succeeded");
 	#endif
 	
-	HMODULE RemoteModuleHandle = 0;
-	if (ReadProcessMemory(m_hProcess, ReturnPointerValue, RemoteModuleHandle, sizeof(HMODULE), NULL))
+	size_t RemoteModuleHandle = 0;
+	if (ReadProcessMemory(m_hProcess, ReturnPointerValue, &RemoteModuleHandle, sizeof(HMODULE), NULL))
 	{
 		RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
 	}
@@ -122,7 +122,7 @@ HMODULE CRemoteLoader::LoadLibraryByPathW(LPCWCH Path)
 	{
 		RemoteFreeMemory(ReturnPointerValue, sizeof(void*));
 		if (RemoteModuleHandle == 0)
-			RemoteModuleHandle = GetRemoteModuleHandleW(Path);
+			RemoteModuleHandle = (size_t)GetRemoteModuleHandleW(Path);
 	}
 
 	return (HMODULE)RemoteModuleHandle;

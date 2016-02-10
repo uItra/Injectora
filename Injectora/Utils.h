@@ -435,6 +435,21 @@ namespace Utils
 		return address;
 	}
 
+	static HANDLE NtCreateThreadEx(HANDLE hProcess, LPVOID lpRemoteThreadStart, LPVOID lpParam)
+	{
+		NTCREATETHREADEX fnNtCreateThreadEx = (NTCREATETHREADEX)Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "NtCreateThreadEx");
+		if (fnNtCreateThreadEx == NULL)
+			return NULL;
+
+		HANDLE hRemoteThread = NULL;
+		HRESULT hRes = 0;
+
+		if (!NT_SUCCESS(fnNtCreateThreadEx(&hRemoteThread, THREAD_ALL_ACCESS, NULL, hProcess, lpRemoteThreadStart, lpParam, 0, 0, 0x1000, 0x100000, NULL)))
+			return NULL;
+
+		return hRemoteThread;
+	}
+
 };
 
 #endif

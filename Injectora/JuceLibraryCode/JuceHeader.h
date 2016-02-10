@@ -13,7 +13,7 @@
 #ifndef __APPHEADERFILE__
 #define __APPHEADERFILE__
 
-#ifdef _DEBUG
+//#ifdef _DEBUG
 
 #ifndef DEBUG_MESSAGES_ENABLED
 #define DEBUG_MESSAGES_ENABLED
@@ -23,7 +23,7 @@
 #define WRITE_DEBUG_TO_FILE
 #endif
 
-#endif
+//#endif
 
 #include <Windows.h>
 #include <string>
