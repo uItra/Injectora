@@ -4,11 +4,11 @@
 #include "JuceHeader.h"
 #include "TableComponent.h"
 #include "LookAndFeelCustom.h"
+#include "Utils.h"
 
 class ProcessesComponent : public Component, public ButtonListener
 {
 public:
-
 	ProcessesComponent();
 	~ProcessesComponent();
 
@@ -16,7 +16,7 @@ public:
     void resized();
     void buttonClicked(Button* buttonThatWasClicked);
 	bool FetchProcessList();
-	String getCurrentProcess();
+	ProcessInfo getCurrentProcess();
 	TableComponent* getProcessList();
 
 private:
@@ -27,6 +27,10 @@ private:
 	LookAndFeelCustom lookAndFeelCustom;
 	
 	Array<ProcessInfo> processes;
+
+	HMODULE hNtdll;
+	tNTQSI fnQSI;
+
 
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ProcessesComponent)
 };

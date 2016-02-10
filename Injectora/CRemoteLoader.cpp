@@ -38,6 +38,28 @@ HMODULE CRemoteLoader::LoadLibraryByPathA(LPCCH Path)
 	return LoadLibraryByPathW(Module);
 }
 
+DWORD CRemoteLoader::CreateRPCEnvironment(bool noThread /*= false*/)
+{
+	DWORD dwResult = ERROR_SUCCESS;
+	DWORD thdID = 1337;
+	bool status = true;
+
+	// Allocate environment codecave
+	if (m_pWorkerCode == nullptr)
+		m_pWorkerCode = RemoteAllocateMemory(0x1000);
+
+	// Create RPC thread
+	if (noThread == false)
+		thdID = CreateWorkerThread();
+
+	// Create synchronization event
+	status = CreateAPCEvent(thdID);
+	if (thdID == 0 || status == false)
+		dwResult = GetLastError();
+
+	return dwResult;
+}
+
 HMODULE CRemoteLoader::LoadLibraryByPathW(LPCWCH Path)
 {
 	if (Path == NULL)
@@ -65,25 +87,35 @@ HMODULE CRemoteLoader::LoadLibraryByPathW(LPCWCH Path)
 	DebugShout("[LoadLibraryByPathW] LoadLibraryW = 0x%X", RemoteLoadLibraryW);
 	#endif
 
+	//if (CreateRPCEnvironment() != ERROR_SUCCESS)
+	//{
+	//	#ifdef DEBUG_MESSAGES_ENABLED
+	//	DebugShout("[LoadLibraryByPathW] Failed to create RPC environment");
+	//	#endif
+	//	return NULL;
+	//}
+
 	void* ReturnPointerValue = RemoteAllocateMemory(sizeof(size_t));
-	
-	PushUNICODEString(Path);
-	if (m_bIs64bit)
-		PushCall(CCONV_FASTCALL, RemoteLoadLibraryW);
-	else
-		PushCall(CCONV_STDCALL, RemoteLoadLibraryW);
 	
 	if (m_bIs64bit)
 	{
+		BeginCall64();
+
+		PushUNICODEString(Path);
+		PushCall(CCONV_FASTCALL, RemoteLoadLibraryW);
+
 		//mov ptr, rax
 		AddByteToBuffer(0x48);
 		AddByteToBuffer(0xA3);
 		AddLong64ToBuffer((unsigned __int64)ReturnPointerValue);
 	
-		Epilogue64();
+		EndCall64();
 	}
 	else
 	{
+		PushUNICODEString(Path);
+		PushCall(CCONV_STDCALL, RemoteLoadLibraryW);
+
 		//mov ptr, eax
 		AddByteToBuffer(0xA3);
 		AddLongToBuffer((unsigned long)ReturnPointerValue);
@@ -98,7 +130,7 @@ HMODULE CRemoteLoader::LoadLibraryByPathW(LPCWCH Path)
 		AddByteToBuffer(0x00);
 	}
 	
-	if (ExecuteRemoteThreadBuffer(m_CurrentRemoteThreadBuffer, true) == false)
+	if (ExecuteRemoteThreadBuffer(m_CurrentRemoteThreadBuffer) == false)
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryByPathW] ExecuteRemoteThreadBuffer failed");
@@ -625,6 +657,8 @@ BOOL CRemoteLoader::CallEntryPoint(void* BaseAddress, FARPROC Entrypoint)
 {
 	if (m_bIs64bit)
 	{
+		BeginCall64();
+
 		PushInt64((unsigned __int64)BaseAddress);
 		PushInt64(DLL_PROCESS_ATTACH);
 		PushInt64(0x00);

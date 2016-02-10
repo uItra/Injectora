@@ -254,8 +254,7 @@ bool File::moveFileTo (const File& newFile) const
 
 bool File::copyFileTo (const File& newFile) const
 {
-    return (*this == newFile)
-            || (exists() && newFile.deleteFile() && copyInternal (newFile));
+    return (*this == newFile) || (exists() && newFile.deleteFile() && copyInternal (newFile));
 }
 
 bool File::copyDirectoryTo (const File& newDirectory) const

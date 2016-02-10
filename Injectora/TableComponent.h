@@ -1,34 +1,12 @@
 #ifndef __TABLE_COMPONENT_H__
 #define __TABLE_COMPONENT_H__
 
-#include "../JuceLibraryCode/JuceHeader.h"
+#include "JuceHeader.h"
+#include "ProcessInfo.h"
 
 class MainComponent;
 
-struct ProcessInfo
-{
-	String processName;
-	DWORD processId;
-
-	class ProcessNameSorter
-	{
-	public:
-		static int compareElements(ProcessInfo a, ProcessInfo b) {
-			return a.processName.compareIgnoreCase(b.processName);
-		}
-	};
-
-	class ProcessIdSorter
-	{
-	public:
-		static int compareElements(ProcessInfo first, ProcessInfo second) {
-			return (first.processId < second.processId) ? -1 : ((second.processId < first.processId) ? 1 : 0);
-		}
-	};
-
-};
-
-
+extern ScopedPointer<ProcessInfo>	currentProcessSelected;
 extern ScopedPointer<TextEditor>	processEditor;
 extern ScopedPointer<Component>		dllComponent;
 
@@ -73,8 +51,9 @@ public:
 			}
 			else
 			{
-				currentProcess = processList[lastRowSelected].processName;
-				processEditor->setText(currentProcess);
+				currentProcess = processList[lastRowSelected];
+				currentProcessSelected = &currentProcess;
+				processEditor->setText(currentProcessSelected->toString());
 			}
 		}
 	}
@@ -210,7 +189,7 @@ public:
 	bool xml;
 	Array<ProcessInfo> processList;
 	String currentDll;
-	String currentProcess;
+	ProcessInfo currentProcess;
 
 	String openFile()
 	{

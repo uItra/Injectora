@@ -1146,6 +1146,9 @@
     <ClInclude Include="nt_ddk.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ProcessInfo.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CRemoteCode.cpp">

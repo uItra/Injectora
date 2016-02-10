@@ -55,6 +55,7 @@ private:
 	XmlElement*						settingsData;
 	XmlElement*						settingsList;
 	XmlElement*						settings;
+	bool							settingsHaveBeenLoaded;
 
 	bool							manualMap;
 	bool							autoInject;
@@ -62,7 +63,8 @@ private:
 
 	File							dllDirectory;
 	String							dllName;
-	String							process;
+
+	ProcessInfo						process;
 
 	Injector						injector;
 

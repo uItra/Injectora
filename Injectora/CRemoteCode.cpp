@@ -21,11 +21,25 @@ void CRemoteCode::PushParameter(parameter_type_t param_type, void *param)
 	m_CurrentInvokeInfo.params.push_back(pi);
 }
 
+void CRemoteCode::PushUInt(unsigned int i)
+{
+	unsigned int *iUse = new unsigned int;
+	*iUse = i;
+	PushParameter(PARAMETER_TYPE_INT, iUse);
+}
+
 void CRemoteCode::PushInt(int i)
 {
 	int *iUse = new int;
 	*iUse = i;
 	PushParameter(PARAMETER_TYPE_INT, iUse);
+}
+
+void CRemoteCode::PushUInt64(unsigned __int64 i)
+{
+	unsigned __int64 *iUse = new unsigned __int64;
+	*iUse = i;
+	PushParameter(PARAMETER_TYPE_INT64, iUse);
 }
 
 void CRemoteCode::PushInt64(__int64 i)
@@ -202,7 +216,7 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 	
 	m_CurrentInvokeInfo.cconv = cconv;
 
-	if (m_bIs64bit || cconv == CCONV_FASTCALL)
+	if ((m_bIs64bit || cconv == CCONV_WIN64) || cconv == CCONV_FASTCALL)
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("Entering __fastcall");
@@ -211,7 +225,7 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 		if (m_bIs64bit) // 64 bit
 		{
 			/* Backup parameter register RCX, RDX, R8, and R9 onto stack */
-			Prologue64();
+			//BeginCall64();
 
 			////////////////////////////////////////////////////////////////////////////////////////////////
 			/// First things first. 64 bit mandatory "shadow" space of at least 32 bytes for EVERY call  ///
@@ -237,7 +251,7 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 					if (m_CurrentInvokeInfo.params.size() == 0)
 						break;
 
-					if (m_CurrentInvokeInfo.params[0].ptype & _PARAMETER_TYPE_STRING)
+					if (_PARAMETER_TYPE_STRING(m_CurrentInvokeInfo.params[0].ptype))
 					{
 						LoadStringParam64(m_CurrentInvokeInfo.params[0], (parameter_index_t)i);
 					}
@@ -256,13 +270,14 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 			//
 			// Call function address, and clean stack
 			//
-			// mov  rax, calladdress
-			// call rax
-			AddByteToBuffer(0x48);
-			AddByteToBuffer(0xB8);		//mov rax,
+			// mov  r13, calladdress
+			// call r13
+			AddByteToBuffer(0x49);
+			AddByteToBuffer(0xBD);		//mov r13,
 			AddLong64ToBuffer(m_CurrentInvokeInfo.calladdress); // calladdress
+			AddByteToBuffer(0x41);
 			AddByteToBuffer(0xFF);		//call
-			AddByteToBuffer(0xD0);		//rax
+			AddByteToBuffer(0xD5);		//r13
 			// Clean stack
 			// add rsp, (rsp_dif + 8)
 			AddByteToBuffer(0x48);
@@ -428,7 +443,7 @@ remote_thread_buffer_t CRemoteCode::AssembleRemoteThreadBuffer()
 	if (m_bIs64bit)
 	{
 		// Restore Registers and return
-		Epilogue64();
+		EndCall64();
 	}
 	else
 	{
@@ -470,7 +485,6 @@ bool CRemoteCode::ExecuteRemoteThreadBuffer(remote_thread_buffer_t thread_data, 
 	if (RemoteBuffer == NULL)
 		return false;
 
-	printf("lpThread: 0x%llp\n", RemoteBuffer);
 	HANDLE hThreadHandle = CreateRemoteThreadInProcess((LPTHREAD_START_ROUTINE)RemoteBuffer, NULL); 
 	if (hThreadHandle == INVALID_HANDLE_VALUE)
 	{
@@ -517,7 +531,7 @@ HANDLE CRemoteCode::CreateRemoteThreadInProcess(LPTHREAD_START_ROUTINE lpThread,
 	//return CreateRemoteThread(m_hProcess, NULL, NULL, lpThread, lpParam, NULL, NULL);
 }
 
-void CRemoteCode::Prologue64()
+void CRemoteCode::BeginCall64()
 {
 	// backup param registers
 
@@ -547,10 +561,13 @@ void CRemoteCode::Prologue64()
 	AddByteToBuffer(4 * sizeof(size_t));
 }
 
-void CRemoteCode::Epilogue64()
+void CRemoteCode::EndCall64()
 {
 	// Restore registers and return
 
+	// xor eax, eax
+	// AddByteToBuffer(0x31);
+	// AddByteToBuffer(0xC0);
 	// mov    rcx,QWORD PTR [rsp+0x8]
 	AddByteToBuffer(0x48);
 	AddByteToBuffer(0x8B);
@@ -607,16 +624,14 @@ void CRemoteCode::AddLong64ToBuffer(unsigned __int64 in)
 	AddLongToBuffer(highInt32);
 }
 
-size_t CRemoteCode::PushAllParameters(bool right_to_left)
+void CRemoteCode::PushAllParameters(bool right_to_left)
 {
 	if (m_CurrentInvokeInfo.params.size() == 0)
-		return 0;
+		return;
 
 	#ifdef DEBUG_MESSAGES_ENABLED
 	DebugShout("Number of parameters for function [%i]", m_CurrentInvokeInfo.params.size());
 	#endif
-
-	size_t stackSize = 0;
 
 	vector<parameter_info_t> currentParams = m_CurrentInvokeInfo.params;
 	vector<parameter_info_t> pushOrder;
@@ -665,8 +680,6 @@ size_t CRemoteCode::PushAllParameters(bool right_to_left)
 		parameter_info_t *paraminfo = &pushOrder[p];
 		if (paraminfo == NULL)
 			continue;
-
-		stackSize += sizeof(size_t);
 
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("Function Iter [%i] Parameter [%s]", p, ParameterTypeToString(paraminfo->ptype).c_str());
@@ -761,8 +774,6 @@ size_t CRemoteCode::PushAllParameters(bool right_to_left)
 				// push ulParam
 				AddByteToBuffer(0x68);
 				AddLongToBuffer(ulParam);
-
-				stackSize += sizeof(size_t); // allocate 8 bytes cause 64 bit is a cunt
 			}
 			else
 			{
@@ -877,8 +888,195 @@ size_t CRemoteCode::PushAllParameters(bool right_to_left)
 
 		} //end of switch statement
 	}
+}
 
-	return stackSize;
+/*
+Create thread for RPC
+
+RETURN:
+Thread ID
+*/
+DWORD CRemoteCode::CreateWorkerThread()
+{
+	DWORD thdID = 0;
+	int space = 4 * sizeof(size_t); // 4 int64 values on top of thread. Kinda likea mini stack
+
+	//
+	// Create execution thread
+	//
+	if (!m_hWorkThd)
+	{
+		/*
+		for(;;)
+		SleepEx(5, TRUE);
+
+		ExitThread(SetEvent(m_hWaitEvent));
+		*/
+		BeginCall64();
+
+		PushUInt64(5);
+		PushUInt64(TRUE);
+		PushCall(CCONV_WIN64, (FARPROC)SleepEx);
+
+		// Relative jump back RIP 41 bytes
+		AddByteToBuffer(0xEB);
+		AddByteToBuffer(0xD5);
+
+		ExitThreadWithStatus();
+
+		EndCall64();
+
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShoutBufferHex();
+		#endif
+
+		unsigned char *newBuffer = new unsigned char[m_CurrentRemoteThreadBuffer.size()];
+
+		for (int i = 0; i < (int)m_CurrentRemoteThreadBuffer.size(); i++)
+			newBuffer[i] = m_CurrentRemoteThreadBuffer[i];
+
+		m_dwWorkerCodeSize = m_CurrentRemoteThreadBuffer.size();
+		m_pWorkerCodeThread = (void*)((size_t)m_pWorkerCode + space);
+
+		BOOL bWrite = WriteProcessMemory(m_hProcess, (void*)m_pWorkerCodeThread, newBuffer, m_dwWorkerCodeSize, NULL);
+		if (bWrite == FALSE)
+		{
+			delete[] newBuffer;
+
+			// Destroy remote buffer for next one
+			DestroyRemoteThreadBuffer();
+
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[CreateWorkerThread] Failed to allocate m_pWorkerCode!");
+			#endif
+			return NULL;
+		}
+
+		delete[] newBuffer;
+
+		m_hWorkThd = CreateRemoteThread(m_hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)m_pWorkerCodeThread, m_pWorkerCode, 0, &thdID);
+
+		// Destroy remote buffer for next one
+		DestroyRemoteThreadBuffer();
+
+		return thdID;
+	}
+	else
+		return GetThreadId(m_hWorkThd);
+}
+
+void CRemoteCode::ExitThreadWithStatus()
+{
+	// mov  rcx, rax
+	AddByteToBuffer(0x48);
+	AddByteToBuffer(0x89); 
+	AddByteToBuffer(0xC1);
+	// mov  r13, [ExitThread]
+	AddByteToBuffer(0x49);
+	AddByteToBuffer(0xBD);
+	AddLong64ToBuffer((INT_PTR)ExitThread);
+	// call r13
+	AddByteToBuffer(0x41);
+	AddByteToBuffer(0xFF); 
+	AddByteToBuffer(0xD5);
+}
+
+bool CRemoteCode::CreateAPCEvent( DWORD threadID )
+{         
+    if(m_hWaitEvent == NULL)
+    {
+        size_t dwResult        = ERROR_SUCCESS;
+		void* pCodecave		   = NULL;
+        wchar_t pEventName[64] = {0};
+        size_t len             =  sizeof(pEventName);
+
+        // Generate event name
+        swprintf_s(pEventName, ARRAYSIZE(pEventName), L"_INJEvent_0x%x_0x%x", threadID, GetTickCount());
+
+		BeginCall64();
+
+		PushUInt64(NULL);	// lpEventAttributes
+		PushUInt64(TRUE);	// bManualReset
+		PushUInt64(FALSE);	// bInitialState
+		PushUNICODEString(pEventName);
+        PushCall(CCONV_WIN64, (FARPROC)CreateEventW);
+
+        // Save event handle
+		#ifdef _WIN64
+		// mov  rdx, [rsp + 8]
+		AddByteToBuffer(0x48);
+		AddByteToBuffer(0x8B);
+		AddByteToBuffer(0x54);
+		AddByteToBuffer(0x24); 
+		AddByteToBuffer(sizeof(size_t));
+		#else
+		AddByteToBuffer(0x48);
+		AddByteToBuffer(0x8B);
+		AddByteToBuffer(0x54);
+		AddByteToBuffer(0x24);
+		AddByteToBuffer(sizeof(size_t));
+        //a.mov(AsmJit::ndx, AsmJit::dword_ptr(AsmJit::nbp, 2 * WordSize));
+		#endif   
+
+		// mov  [rdx+0x8], rax
+		AddByteToBuffer(0x48);
+		AddByteToBuffer(0x89);
+		AddByteToBuffer(0x42);
+		AddByteToBuffer(sizeof(size_t));
+		//a.mov(sysint_ptr(AsmJit::ndx, WordSize), AsmJit::nax);
+
+        ExitThreadWithStatus();
+
+		EndCall64();
+
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShoutBufferHex();
+		#endif
+
+		unsigned char *newBuffer = new unsigned char[m_CurrentRemoteThreadBuffer.size()];
+
+		for (int i = 0; i < (int)m_CurrentRemoteThreadBuffer.size(); i++)
+			newBuffer[i] = m_CurrentRemoteThreadBuffer[i];
+
+		pCodecave = CommitMemory(newBuffer, m_CurrentRemoteThreadBuffer.size());
+
+		delete[] newBuffer;
+
+		if (pCodecave == NULL)
+		{
+			// Destroy remote buffer for next one
+			DestroyRemoteThreadBuffer();
+
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[CreateAPCEvent] Failed to allocate pCodecave!");
+			#endif
+			return NULL;
+		}
+
+		HANDLE hThread = CreateRemoteThread(m_hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)pCodecave, m_pWorkerCode, 0, NULL);
+		if (hThread)
+		{
+			WaitForSingleObject(hThread, INFINITE);
+			// TODO: Need to find something better for 64-bit results
+			GetExitCodeThread(hThread, (LPDWORD)&dwResult);
+		}
+
+        m_hWaitEvent = OpenEventW(SYNCHRONIZE | EVENT_MODIFY_STATE, FALSE, pEventName);
+
+		if (pCodecave)
+			RemoteFreeMemory(pCodecave, m_CurrentRemoteThreadBuffer.size());
+
+		// Destroy remote buffer for next one
+		DestroyRemoteThreadBuffer();
+
+        if(dwResult == NULL || m_hWaitEvent == NULL)
+        {
+            SetLastError(ERROR_OBJECT_NOT_FOUND);
+            return false;
+        }
+    }
+
+    return true;
 }
 
 void* CRemoteCode::CommitMemory(void *data, SIZE_T size_of_data)
@@ -1018,16 +1216,21 @@ void CRemoteCode::DebugShoutBufferHex()
 
 	int count = 1;
 
-	m_logFile << "RemoteThreadBuffer:" << std::endl << std::endl;
-
+	m_logFile << "RemoteThreadBuffer:" << std::endl;
 	m_logFile << std::endl << " offset | 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F" 
-			  << std::endl << "--------|------------------------------------------------\n00000000| ";
+			  << std::endl << "--------|------------------------------------------------"
+			  << std::endl << "00000000| ";
 
 	OutputDebugString("\n offset | 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n--------|------------------------------------------------\n00000000| ");
 
-	std::string buf;
+	std::string buf, minifiedBuf;
+
 	for (size_t i = 0; i < m_CurrentRemoteThreadBuffer.size(); i++)
 	{
+		char szCurrentHexMinified[128] = { 0 };
+		sprintf_s(szCurrentHexMinified, "%.2X ", m_CurrentRemoteThreadBuffer[i]);
+		minifiedBuf += szCurrentHexMinified;
+
 		char szCurrentHex[128] = { 0 };
 		if (count % 16 == 0 && count != 1)
 		{
@@ -1046,10 +1249,12 @@ void CRemoteCode::DebugShoutBufferHex()
 
 	m_logFile << buf.c_str() << std::endl;
 
-	buf.append("\n\n");
+	m_logFile.close();
 
+	buf.append("\n\n");
 	OutputDebugString(buf.c_str());
 
-	m_logFile.close();
+	minifiedBuf.append("\n\n");
+	OutputDebugString(minifiedBuf.c_str());
 }
 #endif

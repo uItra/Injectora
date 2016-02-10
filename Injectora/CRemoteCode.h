@@ -1,5 +1,6 @@
 #include "JuceHeader.h"
 #include "Utils.h"
+#include "ProcessInfo.h"
 
 #ifndef _CREMOTECODE_H_
 #define _CREMOTECODE_H_
@@ -36,7 +37,7 @@ typedef enum {
 #define _PARAMETER_TYPE_DWORD PARAMETER_TYPE_INT | PARAMETER_TYPE_FLOAT | PARAMETER_TYPE_SHORT | PARAMETER_TYPE_POINTER | PARAMETER_TYPE_STRING | PARAMETER_TYPE_WSTRING
 #define _PARAMETER_TYPE_QWORD PARAMETER_TYPE_INT64 | PARAMETER_TYPE_DOUBLE
 #endif
-#define _PARAMETER_TYPE_STRING PARAMETER_TYPE_STRING | PARAMETER_TYPE_WSTRING
+#define _PARAMETER_TYPE_STRING(paramType) paramType == PARAMETER_TYPE_STRING || paramType == PARAMETER_TYPE_WSTRING
 
 //
 typedef enum {
@@ -80,7 +81,9 @@ public:
 	void					PushParameter(parameter_type_t param_type, void *param);
 
 	void					PushInt(int i);
+	void					PushUInt(unsigned int i);
 	void					PushInt64(__int64 i);
+	void					PushUInt64(unsigned __int64 i);
 	void					PushBool(bool b);
 	void					PushShort(short s);
 	void					PushFloat(float f);
@@ -114,17 +117,23 @@ public:
 protected:
 	HANDLE					CreateRemoteThreadInProcess(LPTHREAD_START_ROUTINE lpThread, LPVOID lpParam);
 
-	void					Prologue64();
+	void					BeginCall64();
 
 	void					AddByteToBuffer(unsigned char in);
 	void					AddLongToBuffer(unsigned long in);
 	void					AddLong64ToBuffer(unsigned __int64 in);
 	void					LoadStringParam64(parameter_info_t paraminfo, parameter_index_t paramindex);
 	bool					LoadParam64(unsigned __int64 param, parameter_index_t paramindex);
-	size_t					PushAllParameters(bool right_to_left = true);
+	void					PushAllParameters(bool right_to_left = true);
 
+	void					EndCall64();
 
-	void					Epilogue64();
+protected:
+	bool					CreateAPCEvent(DWORD threadID);
+	DWORD					CreateWorkerThread();
+	void					ExitThreadWithStatus();
+	
+
 
 protected:
 	HANDLE					m_hProcess;
@@ -135,6 +144,12 @@ protected:
 
 	invoke_info_t			m_CurrentInvokeInfo;
 	remote_thread_buffer_t	m_CurrentRemoteThreadBuffer;
+
+	HANDLE					m_hWaitEvent; // APC sync event handle
+	HANDLE					m_hWorkThd;  // Worker thread handle
+	void*					m_pWorkerCode;
+	void*					m_pWorkerCodeThread; // m_pWorkCode + space
+	size_t					m_dwWorkerCodeSize;
 
 	char					m_baseDir[MAX_PATH];
 	char					m_infoLog[MAX_PATH];

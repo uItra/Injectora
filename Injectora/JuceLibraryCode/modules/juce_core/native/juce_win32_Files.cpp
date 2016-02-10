@@ -124,8 +124,7 @@ const String File::separatorString ("\\");
 //==============================================================================
 bool File::exists() const
 {
-    return fullPath.isNotEmpty()
-            && WindowsFileHelpers::getAtts (fullPath) != INVALID_FILE_ATTRIBUTES;
+    return fullPath.isNotEmpty() && WindowsFileHelpers::getAtts(fullPath) != INVALID_FILE_ATTRIBUTES;
 }
 
 bool File::existsAsFile() const

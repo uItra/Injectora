@@ -415,7 +415,7 @@ namespace Utils
 				frwd_module = LoadLibraryA(dllName);
 			if (!frwd_module)
 			{
-				MessageBox(0, "GetRemoteProcAddress failed to load module using GetRemoteModuleHandle and LoadLibrary!", "injectora", MB_ICONERROR);
+				MessageBox(0, "GetProcAddress failed to load module using GetModuleHandle and LoadLibrary!", "injectora", MB_ICONERROR);
 				return NULL;
 			}
 

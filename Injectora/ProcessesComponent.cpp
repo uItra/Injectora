@@ -10,6 +10,9 @@ ProcessesComponent::ProcessesComponent()
     okButton->setButtonText(TRANS("Okay"));
     okButton->addListener(this);
 
+	hNtdll = (HMODULE)Utils::GetLocalModuleHandle("ntdll.dll");
+	fnQSI = (tNTQSI)Utils::GetProcAddress(hNtdll, "NtQuerySystemInformation");
+
 	FetchProcessList();
 	processList.loadData(false); 
 
@@ -24,7 +27,7 @@ ProcessesComponent::~ProcessesComponent()
     okButton = nullptr;
 }
 
-String ProcessesComponent::getCurrentProcess()
+ProcessInfo ProcessesComponent::getCurrentProcess()
 {
 	return processList.currentProcess;
 }
@@ -57,38 +60,71 @@ bool ProcessesComponent::FetchProcessList()
 {
 	processes.clear();
 
-	HANDLE hProcessSnap;
-	PROCESSENTRY32 pe32;
-	
-	hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-	if (hProcessSnap == INVALID_HANDLE_VALUE)
-	{
-		printf("CreateToolhelp32Snapshot Failed");
-		return 0;
-	}
+	ULONG cbBuffer = 131072;
+	void* pBuffer = NULL;
+	NTSTATUS Status = STATUS_INFO_LENGTH_MISMATCH;
+	void* hHeap = GetProcessHeap();
 
-	pe32.dwSize = sizeof(PROCESSENTRY32);
-	if (!Process32First(hProcessSnap, &pe32))
+	bool check = false;
+	bool found = false;
+	while (!found)
 	{
-		printf("Process32First Failed");
-		CloseHandle(hProcessSnap);
-		return 0;
-	}
+		pBuffer = HeapAlloc(hHeap, HEAP_ZERO_MEMORY, cbBuffer);
+		if (pBuffer == NULL)
+			return 0;
 
-	do 
-	{
-		if (strcmp("System", pe32.szExeFile) == 0 || strcmp("[System Process]", pe32.szExeFile) == 0)
-			continue;
-		ProcessInfo info;
-		info.processId = pe32.th32ProcessID;
-		info.processName = pe32.szExeFile;
-		processes.add(info);
-	} while (Process32Next(hProcessSnap, &pe32));
+		Status = fnQSI(SystemProcessInformation, pBuffer, cbBuffer, &cbBuffer);
+		if (Status == STATUS_INFO_LENGTH_MISMATCH)
+		{
+			check = true;
+			HeapFree(hHeap, NULL, pBuffer);
+			cbBuffer *= 2;
+		}
+		else if (!NT_SUCCESS(Status))
+		{
+			HeapFree(hHeap, NULL, pBuffer);
+			return 0;
+		}
+		else
+		{
+			check = false;
+
+			PSYSTEM_PROCESSES infoP = (PSYSTEM_PROCESSES)pBuffer;
+			while (infoP)
+			{
+				char pName[256];
+				memset(pName, 0, sizeof(pName));
+				WideCharToMultiByte(0, 0, infoP->ProcessName.Buffer, infoP->ProcessName.Length, pName, 256, NULL, NULL);
+				if (pName && infoP->ProcessId)
+				{
+					if (_stricmp("System", pName) && _stricmp("[System Process]", pName))
+					{
+						ProcessInfo info;
+						info.processId = infoP->ProcessId;
+						info.processName = pName;
+
+						processes.add(info);
+					}
+				}
+
+				if (!infoP->NextEntryDelta)
+					break;
+				infoP = (PSYSTEM_PROCESSES)((unsigned char*)infoP + infoP->NextEntryDelta);
+			}
+			if (pBuffer)
+				HeapFree(hHeap, NULL, pBuffer);
+		}
+
+		if (!check)
+		{
+			// Don't continuously search...
+			break;
+		}
+	}
 
 	processList.numRows = processes.size();
 	processList.setProcessList(processes);
 	processList.table.updateContent();
 
-	CloseHandle(hProcessSnap);
 	return 1;
 }

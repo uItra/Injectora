@@ -31,7 +31,6 @@
 #include <algorithm>
 #include <list>
 #include <memory>
-#include <TlHelp32.h>
 #include <vector>
 #include <exception>
 #include <stdio.h>

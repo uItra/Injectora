@@ -1,6 +1,9 @@
 #include "MainComponent.h"
 #include "MenuComponent.h"
 
+#include "ProcessInfo.h"
+
+ScopedPointer<ProcessInfo>		currentProcessSelected;
 ScopedPointer<TextEditor>		processEditor;
 ScopedPointer<Component>		dllComponent;
 
@@ -26,6 +29,8 @@ MainComponent::MainComponent() : manualMap(false), autoInject(false), closeOnInj
 	processesButton->setColour(TextButton::buttonOnColourId, Colour(0xff700000));
     processesButton->setColour(TextButton::textColourOnId, Colours::white);
     processesButton->setColour(TextButton::textColourOffId, Colours::white);
+
+	currentProcessSelected = new ProcessInfo();
 
 	addChildComponent(dllComponent = new Component("DLL"));
 	dllComponent->addComponentListener(this);
@@ -117,7 +122,7 @@ MainComponent::MainComponent() : manualMap(false), autoInject(false), closeOnInj
 									columnXml->getIntAttribute("width"), 15, 25, 400, TableHeaderComponent::defaultFlags);
 	}
 
-	processEditor->setText(process);
+	processEditor->setText(process.toString());
 
     setSize(350, 200);
 }
@@ -173,7 +178,11 @@ void MainComponent::loadSettings()
 	manualMap = settings->getBoolAttribute("manualMap");
 	autoInject = settings->getBoolAttribute("autoInject");
 	closeOnInject = settings->getBoolAttribute("closeOnInject");
-	process = settings->getStringAttribute("process");
+	process.processName = settings->getStringAttribute("processName");
+	process.processId = settings->getIntAttribute("processId");
+
+	//currentProcessSelected->processName = process.processName;
+	//currentProcessSelected->processId = process.processId;
 
 	MainAppWindow* maw;
 	do 
@@ -183,15 +192,20 @@ void MainComponent::loadSettings()
 			maw->setUsingNativeTitleBar(settings->getBoolAttribute("nativeWindow"));
 	} while (!maw);
 	
+	settingsHaveBeenLoaded = true;
 }
 
 void MainComponent::saveSettings()
 {
+	if (!settingsHaveBeenLoaded)
+		return;
+
 	settings->setAttribute("manualMap", manualMap ? "true" : "false");
 	settings->setAttribute("autoInject", autoInject ? "true" : "false");
 	settings->setAttribute("closeOnInject", closeOnInject ? "true" : "false");
 	settings->setAttribute("nativeWindow", MainAppWindow::getMainAppWindow()->isUsingNativeTitleBar() ? "true" : "false");
-	settings->setAttribute("process", processEditor->getText());
+	settings->setAttribute("processName", process.processName);
+	settings->setAttribute("processId", String((unsigned int)process.processId));
 	
 	char szDir[MAX_PATH];
 	GetModuleFileName(NULL, szDir, MAX_PATH);
@@ -256,7 +270,7 @@ void MainComponent::buttonClicked(Button* buttonThatWasClicked)
 			return;
 		}
 
-		injector.SetProcessName(processEditor->getText());
+		injector.SetProcessInformation(process);
 		injector.SetAutoInject(autoInject);
 		injector.SetCloseOnInject(closeOnInject);
 		injector.SetManualMap(manualMap);
@@ -324,8 +338,11 @@ void MainComponent::textEditorTextChanged(TextEditor& editorThatChanged)
 {
 	if (&editorThatChanged == processEditor)
 	{
+		process.processId = currentProcessSelected->processId;
+		process.processName = currentProcessSelected->processName;
+
 		saveSettings();
-		injector.SetProcessName(processEditor->getText());
+		injector.SetProcessInformation(process);
 	}
 }
 
@@ -441,7 +458,7 @@ bool MainComponent::perform(const InvocationInfo& info)
 		autoInject = !autoInject;
 		if (autoInject)
 		{
-			injector.SetProcessName(processEditor->getText());
+			injector.SetProcessInformation(process);
 			injector.SetAutoInject(autoInject);
 			injector.SetCloseOnInject(closeOnInject);
 			injector.SetManualMap(manualMap);

@@ -18,7 +18,12 @@ public:
 	DWORD GetProcessId();
 	void EnableDebugPriv() { Utils::SetDebugPrivilege(TRUE); };
 
-	void SetProcessName(String name) { processName = name; }
+	void SetProcessInformation(ProcessInfo processInfo) 
+	{ 
+		processName = processInfo.processName; 
+		processId = processInfo.processId; 
+	}
+
 	void SetDLLName(String dllname) { DLL = dllname; }
 	void SetAutoInject(bool bAutoInj) { autoInject = bAutoInj; }
 	void SetManualMap(bool bManualMap) { isManualMap = bManualMap; }

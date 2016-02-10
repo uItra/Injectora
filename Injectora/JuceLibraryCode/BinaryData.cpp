@@ -22,7 +22,7 @@ static const unsigned char temp_binary_data_2[] =
 //"<!-- It's best not to touch anything here, let Injectora generate this for you -->"
 "<TABLE_DATA>\r\n"
 "	<SETTINGS>\r\n"
-"		<SETTING manualMap=\"false\" autoInject=\"false\" nativeWindow=\"false\" process=\"process.exe\"/>\r\n"		
+"		<SETTING manualMap=\"false\" autoInject=\"false\" nativeWindow=\"false\" processName=\"process.exe\" processId=\"0\"/>\r\n"		
 "	</SETTINGS>\r\n"
 //"	<!-- Do not touch ANY of the column section, or you'll corrupt your settings file -->"
 "	<COLUMNS>\r\n"

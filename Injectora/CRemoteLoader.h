@@ -95,6 +95,8 @@ protected:
 	BOOL							ProcessSections( PVOID BaseAddress, PVOID RemoteAddress, BOOL MapPEHeader );
 
 private:
+	DWORD							CreateRPCEnvironment(bool noThread = false);
+
 	ModuleFile						InitModuleFile(LPCCH FileName);
 	BOOL							FreeModuleFile(ModuleFile Handle);
 	TCHAR*							LastErrorString();

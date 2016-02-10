@@ -217,6 +217,14 @@ HRESULT Injector::ManualMap(String filePath)
 		return 2;
 	}
 
+	File file(filePath);
+	if (!file.exists())
+	{
+		MessageBox(0, "File selected to be injected does not exist!", "Injectora", MB_ICONERROR);
+		isReady = false;
+		return 2;
+	}
+
 	if (!Setup())
 	{
 		isReady = false;
@@ -267,11 +275,19 @@ BOOL Injector::LoadLibraryInject(String filePath)
 
 	if (strlen(filePath.getCharPointer()) < 5)
 	{
-		printf("Select a DLL first!\n");
+		MessageBox(0, "Select a DLL first!", "Injectora", MB_ICONEXCLAMATION);
 		isReady = false;
 		return 2;
 	}
-	
+
+	File file(filePath);
+	if (!file.exists())
+	{
+		MessageBox(0, "File selected to be injected does not exist!", "Injectora", MB_ICONERROR);
+		isReady = false;
+		return 2;
+	}
+
 	if (!Setup())
 	{
 		isReady = false;
