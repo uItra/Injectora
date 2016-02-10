@@ -132,7 +132,7 @@ static bool isWindowsVersionOrLater(SystemStats::OperatingSystemType target)
 {
 	if (target == SystemStats::Windows10)
 	{
-		typedef NTSTATUS(NTAPI* fnRtlGetVersion)(PRTL_OSVERSIONINFOW lpVersionInformation);
+		typedef LONG(__stdcall* fnRtlGetVersion)(PRTL_OSVERSIONINFOW lpVersionInformation);
 		static fnRtlGetVersion RtlGetVersion = (fnRtlGetVersion)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion");
 		
 		RTL_OSVERSIONINFOEXW verInfo = { 0 };

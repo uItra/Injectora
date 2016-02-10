@@ -408,8 +408,11 @@ bool StreamingSocket::createListener (const int newPortNumber, const String& loc
     servTmpAddr.sin_family = PF_INET;
     servTmpAddr.sin_addr.s_addr = htonl (INADDR_ANY);
 
-    if (localHostName.isNotEmpty())
-        servTmpAddr.sin_addr.s_addr = ::inet_addr (localHostName.toUTF8());
+	if (localHostName.isNotEmpty())
+	{
+		inet_pton(PF_INET, localHostName.toUTF8(), &servTmpAddr.sin_addr);
+		//servTmpAddr.sin_addr.s_addr = ::inet_addr(localHostName.toUTF8());
+	}
 
     servTmpAddr.sin_port = htons ((uint16) portNumber);
 
@@ -444,9 +447,12 @@ StreamingSocket* StreamingSocket::waitForNextConnection() const
         juce_socklen_t len = sizeof (address);
         const int newSocket = (int) accept (handle, (struct sockaddr*) &address, &len);
 
-        if (newSocket >= 0 && connected)
-            return new StreamingSocket (inet_ntoa (((struct sockaddr_in*) &address)->sin_addr),
-                                        portNumber, newSocket);
+		if (newSocket >= 0 && connected)
+		{
+			char str[INET_ADDRSTRLEN];
+			inet_ntop(AF_INET, &((struct sockaddr_in*) &address)->sin_addr, str, INET_ADDRSTRLEN);
+			return new StreamingSocket(str, portNumber, newSocket);
+		}
     }
 
     return nullptr;
@@ -547,10 +553,12 @@ DatagramSocket* DatagramSocket::waitForNextConnection() const
         juce_socklen_t len = sizeof (address);
         char buf[1];
 
-        if (recvfrom (handle, buf, 0, 0, (struct sockaddr*) &address, &len) > 0)
-            return new DatagramSocket (inet_ntoa (((struct sockaddr_in*) &address)->sin_addr),
-                                       ntohs (((struct sockaddr_in*) &address)->sin_port),
-                                       -1, -1);
+		if (recvfrom(handle, buf, 0, 0, (struct sockaddr*) &address, &len) > 0)
+		{
+			char str[INET_ADDRSTRLEN];			
+			inet_ntop(AF_INET, &((struct sockaddr_in*) &address)->sin_addr, str, INET_ADDRSTRLEN);
+			return new DatagramSocket(str, ntohs(((struct sockaddr_in*) &address)->sin_port), -1, -1);
+		}
     }
 
     return nullptr;
