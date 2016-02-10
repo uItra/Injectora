@@ -8,6 +8,8 @@ hasInjected(false),
 isManualMap(false),
 isReady(false)
 {
+	hNtdll = (HMODULE)Utils::GetLocalModuleHandle("ntdll.dll");
+	fnQSI = (tNTQSI)Utils::GetProcAddress(hNtdll, "NtQuerySystemInformation");
 }
 
 Injector::Injector(String nameIn) :
@@ -51,7 +53,7 @@ Injector::Injector(Injector& other)
 	DLL = other.DLL;
 }
 
-DWORD Injector::GetProcessIdByName(const char* process)
+DWORD Injector::GetProcessId()
 {
 	ULONG cbBuffer = 131072;
 	void* pBuffer = NULL;
@@ -60,9 +62,7 @@ DWORD Injector::GetProcessIdByName(const char* process)
 
 	DWORD processId_ = 0;
 
-	HMODULE hNtdll = (HMODULE)Utils::getLocalModuleHandle("ntdll.dll");
-	tNTQSI fpQSI = (tNTQSI)Utils::getProcAddress(hNtdll, "NtQuerySystemInformation");
-
+	const char* process = processName.getCharPointer();
 	std::string name(process);
 	if (!strstr(process, ".exe"))
 		name += ".exe";
@@ -75,7 +75,7 @@ DWORD Injector::GetProcessIdByName(const char* process)
 		if (pBuffer == NULL)
 			return 0;
 
-		Status = fpQSI(SystemProcessInformation, pBuffer, cbBuffer, &cbBuffer);
+		Status = fnQSI(SystemProcessInformation, pBuffer, cbBuffer, &cbBuffer);
 		if (Status == STATUS_INFO_LENGTH_MISMATCH)
 		{
 			check = true;
@@ -97,16 +97,10 @@ DWORD Injector::GetProcessIdByName(const char* process)
 				char pName[256];
 				memset(pName, 0, sizeof(pName));
 				WideCharToMultiByte(0, 0, infoP->ProcessName.Buffer, infoP->ProcessName.Length, pName, 256, NULL, NULL);
-
 				if (_stricmp(name.c_str(), pName) == 0)
 				{
-					//printf("infoP: 0x%llp", infoP);
 					processId_ = infoP->ProcessId;
 					found = true;
-
-					#ifdef _DEBUG
-					printf("FOUND %S > processid: %i (0x%X)\n", infoP->ProcessName.Buffer, processId_, processId_);
-					#endif
 
 					break;
 				}
@@ -146,11 +140,11 @@ BOOL Injector::CheckValidProcessExtension(const char* name)
 
 bool Injector::Setup()
 {
-	processId = GetProcessIdByName(processName.getCharPointer());
+	processId = GetProcessId();
 	#if defined _DEBUG
 	printf("processId: 0x%X\n", processId);
 	#endif
-	if (!processId)
+	if (processId == 0)
 	{
 		MessageBox(0, "Could not find process!\n", "Injectora", MB_ICONEXCLAMATION);
 		return false;
@@ -172,135 +166,29 @@ bool Injector::Setup()
 	return false;
 }
 
-void Injector::SetProcessName(String name)
-{
-	processName = name;
-}
-
-void Injector::SetDLLName(String dllname)
-{ 
-	DLL = dllname;
-}
-
-void Injector::SetAutoInject(bool bAutoInj)
-{
-	autoInject = bAutoInj;
-}
-
-void Injector::SetManualMap(bool bManualMap)
-{
-	isManualMap = bManualMap;
-}
-
-void Injector::SetCloseOnInject(bool bCloseOnInj)
-{
-	//printf("closeOnInject: %s\n", closeOnInject ? "true" : "false");
-	closeOnInject = bCloseOnInj;
-}
-
-void Injector::terminateTimer()
-{
-	stopTimer();
-}
-
-bool Injector::isTimerAlive()
-{
-	return isTimerRunning();
-}
-
-void Injector::beginTimer()
-{
-	startTimer(750);
-}
-
 void Injector::timerCallback()
 {
-	//printf_s("Checking for %s\n", processName.getCharPointer());
-
-	ULONG cbBuffer = 131072;
-	void* pBuffer = NULL;
-	NTSTATUS Status = STATUS_INFO_LENGTH_MISMATCH;
-	void* hHeap = GetProcessHeap();
-
-	DWORD processId_ = 0;
-
-	HMODULE hNtdll = (HMODULE)Utils::getLocalModuleHandle("ntdll.dll");
-	tNTQSI fpQSI = (tNTQSI)Utils::getProcAddress(hNtdll, "NtQuerySystemInformation");
-
-	bool found = false;
-	while (!found)
+	DWORD pidCheck = GetProcessId();		
+	if (pidCheck != 0)
 	{
-		pBuffer = HeapAlloc(hHeap, HEAP_ZERO_MEMORY, cbBuffer);
-		if (pBuffer == NULL)
-			return;
-
-		Status = fpQSI(SystemProcessInformation, pBuffer, cbBuffer, &cbBuffer);
-		if (Status == STATUS_INFO_LENGTH_MISMATCH)
+		bool canInject = true;
+		for (int i = 0; i < oldProcessIds.size(); i++)
 		{
-			HeapFree(hHeap, NULL, pBuffer);
-			cbBuffer *= 2;
-		}
-		else if (!NT_SUCCESS(Status))
-		{
-			HeapFree(hHeap, NULL, pBuffer);
-			return;
-		}
-		else
-		{
-			PSYSTEM_PROCESSES infoP = (PSYSTEM_PROCESSES)pBuffer;
-			while (infoP)
+			if (oldProcessIds[i] == pidCheck)
 			{
-				//char pName[256];
-				//memset(pName, 0, sizeof(pName));
-				//WideCharToMultiByte(0, 0, infoP->ProcessName.Buffer, infoP->ProcessName.Length, pName, 256, NULL, NULL);
-				if (_wcsnicmp(infoP->ProcessName.Buffer, processName.toWideCharPointer(), infoP->ProcessName.Length) == 0)
-				{
-					processId_ = infoP->ProcessId;
-					found = true;
-
-					#ifdef _DEBUG
-					printf("FOUND %S > processid: %i (0x%X)\n", infoP->ProcessName.Buffer, processId_, processId_);
-					#endif
-
-					bool canInject = true;
-					for (int i = 0; i < oldProcessIds.size(); i++)
-					{
-						if (oldProcessIds[i] == processId_)
-						{
-							MessageBox(0, "Module already loaded into this process!", "Injectora", MB_ICONEXCLAMATION);
-							canInject = false;
-							break;
-						}
-					}
-
-					if (canInject)
-					{
-						isReady = true;
-						if (isManualMap)
-							ManualMap(DLL);
-						else
-							LoadLibraryInject(DLL);
-					}
-
-					break;
-				}
-
-				if (!infoP->NextEntryDelta)
-					break;
-				infoP = (PSYSTEM_PROCESSES)((unsigned char*)infoP + infoP->NextEntryDelta);
+				MessageBox(0, "Module already loaded into this process!", "Injectora", MB_ICONEXCLAMATION);
+				canInject = false;
+				break;
 			}
-			if (pBuffer)
-				HeapFree(hHeap, NULL, pBuffer);
 		}
 
-		if (processId_ != 0)
+		if (canInject)
 		{
-			break;
-		}
-		else
-		{
-			// Don't continuously search...
-			break;
+			isReady = true;
+			if (isManualMap)
+				ManualMap(DLL);
+			else
+				LoadLibraryInject(DLL);
 		}
 	}
 }
@@ -339,7 +227,7 @@ HRESULT Injector::ManualMap(String filePath)
 	HMODULE ret = remoteLoader.LoadLibraryByPathIntoMemoryA(filePath.toStdString().c_str(), false);
 	if (!ret)
 	{
-		printf("Failed to inject!");
+		MessageBox(0, "Failed to Manual Map inject!", "Injectora", MB_ICONERROR);
 		isReady = false;
 		return 4;
 	}
@@ -348,10 +236,11 @@ HRESULT Injector::ManualMap(String filePath)
 		MessageBox(0, "Manual Map Success!", "Injectora", MB_ICONASTERISK);
 	
 	oldProcessIds.add(processId);
+
+	CloseHandle(processHandle);
 	
 	isReady = false;
 
-	//printf("closeOnInject: %s\n", closeOnInject ? "ture" : "false");
 	if (closeOnInject)
 		PostQuitMessage(0);
 	
@@ -373,7 +262,7 @@ BOOL Injector::LoadLibraryInject(String filePath)
 	{
 		MessageBox(0, "Invalid Process Name!", "Injectora", MB_ICONEXCLAMATION);
 		isReady = false;
-		return 1;
+		return -1;
 	}
 
 	if (strlen(filePath.getCharPointer()) < 5)
@@ -389,47 +278,19 @@ BOOL Injector::LoadLibraryInject(String filePath)
 		return 3;
 	}
 
-	DWORD	dwMemSize;
-	LPVOID	lpRemoteMem, lpLoadLibrary;
-	int	bRet = FALSE;
+	int		bRet = FALSE;
 	
-	printf("Normal LoadLibrary Injection\n");
+	printf("LoadLibrary injection.....\n");
 
-	dwMemSize = filePath.length() + 1;
-	lpRemoteMem = VirtualAllocEx(processHandle, NULL, dwMemSize, MEM_COMMIT, PAGE_READWRITE);
-	if (lpRemoteMem != NULL)
+	HMODULE returnedModule = remoteLoader.LoadLibraryByPathA(filePath.getCharPointer());
+	if (returnedModule)
 	{
-		if (WriteProcessMemory(processHandle, lpRemoteMem, (LPCVOID)filePath.getCharPointer(), dwMemSize, NULL))
-		{
-			lpLoadLibrary = remoteLoader.GetRemoteProcAddress("Kernel32.dll", "LoadLibraryA");
-			if (CreateRemoteThread(processHandle, NULL, 0, (LPTHREAD_START_ROUTINE)lpLoadLibrary, lpRemoteMem, 0, NULL) != NULL)
-			{
-				printf("LoadLibrary Injection Successful!!\n");
-				oldProcessIds.add(processId);
-
-				bRet = 0;
-			}
-			else
-			{
-				printf("Could not create remote thread\n");
-				bRet = 6;
-			}
-		}
-		else
-		{
-			printf("WriteProcessMemory failed\n");
-			bRet = 5;
-		}
-	}
-	else
-	{
-		printf("Couldn't allocate memory!\n");
-		bRet = 4;
+		bRet = TRUE;
+		oldProcessIds.add(processId);
+		CloseHandle(processHandle);
 	}
 
-	CloseHandle(processHandle);
-
-	if (bRet == TRUE && closeOnInject)
+	if (closeOnInject && bRet == TRUE)
 		PostQuitMessage(0);
 
 	return bRet;

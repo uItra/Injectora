@@ -68,7 +68,11 @@ private:
 	HMODULE							GetRemoteModuleHandleA(LPCCH Module);
 	HMODULE							GetRemoteModuleHandleW(LPCWCH Module);
 
+	void*							GetRemoteProcAddressImpl(HMODULE module, const char *proc_name);
+
 public:
+	FARPROC							GetRemoteProcAddress(HMODULE Module, LPCCH Function);
+	FARPROC							GetRemoteProcAddress(HMODULE Module, SHORT Function);
 	FARPROC							GetRemoteProcAddress(LPCCH Module, LPCCH Function);
 	FARPROC							GetRemoteProcAddress(LPCCH Module, SHORT Function);
 
@@ -81,7 +85,6 @@ protected:
 	PVOID							ImageDirectoryEntryToData( PVOID BaseAddress, USHORT DataDirectory );
 	BOOL							CallEntryPoint( PVOID BaseAddress, FARPROC Entrypoint );
 
-	ExportData						GetExport(PVOID BaseAddress, const char* name_ord, const char* baseModule = "");
 	BOOL							ProcessDelayedImportTable(PVOID BaseAddress, PVOID RemoteAddress);
 	BOOL							ProcessImportTable( PVOID BaseAddress, PVOID RemoteAddress);
 	BOOL							ProcessRelocation( ULONG ImageBaseDelta, WORD Data, PBYTE RelocationBase);

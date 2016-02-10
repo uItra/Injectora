@@ -6,12 +6,13 @@
 
 using namespace std;
 
-//these are the only types supported at the moment
+// these are the only types supported at the moment
 typedef enum {
 	CCONV_CDECL = 0,
 	CCONV_STDCALL,
 	CCONV_THISCALL,
-	CCONV_FASTCALL
+	CCONV_FASTCALL,
+	CCONV_WIN64
 } calling_convention_t;
 
 //
@@ -28,7 +29,23 @@ typedef enum {
 	PARAMETER_TYPE_WSTRING
 } parameter_type_t;
 
+#ifdef _WIN64
 #define _PARAMETER_TYPE_DWORD PARAMETER_TYPE_INT | PARAMETER_TYPE_FLOAT | PARAMETER_TYPE_SHORT
+#define _PARAMETER_TYPE_QWORD PARAMETER_TYPE_INT64 | PARAMETER_TYPE_DOUBLE | PARAMETER_TYPE_POINTER | PARAMETER_TYPE_STRING | PARAMETER_TYPE_WSTRING
+#else
+#define _PARAMETER_TYPE_DWORD PARAMETER_TYPE_INT | PARAMETER_TYPE_FLOAT | PARAMETER_TYPE_SHORT | PARAMETER_TYPE_POINTER | PARAMETER_TYPE_STRING | PARAMETER_TYPE_WSTRING
+#define _PARAMETER_TYPE_QWORD PARAMETER_TYPE_INT64 | PARAMETER_TYPE_DOUBLE
+#endif
+#define _PARAMETER_TYPE_STRING PARAMETER_TYPE_STRING | PARAMETER_TYPE_WSTRING
+
+//
+typedef enum {
+	PARAMETER_INDEX_RCX,
+	PARAMETER_INDEX_RDX,
+	PARAMETER_INDEX_R8,
+	PARAMETER_INDEX_R9,
+	PARAMETER_INDEX_MAX
+} parameter_index_t;
 
 //
 typedef struct {
@@ -89,8 +106,6 @@ public:
 	string					CallingConventionToString(calling_convention_t cconv);
 	string					ParameterTypeToString(parameter_type_t type);
 
-	HANDLE					GetProcess() { return m_hProcess; }
-
 	#ifdef DEBUG_MESSAGES_ENABLED
 	void					DebugShout(const char *szShout, ...);
 	void					DebugShoutBufferHex();
@@ -104,7 +119,10 @@ protected:
 	void					AddByteToBuffer(unsigned char in);
 	void					AddLongToBuffer(unsigned long in);
 	void					AddLong64ToBuffer(unsigned __int64 in);
-	void					PushAllParameters(bool right_to_left = true);
+	void					LoadStringParam64(parameter_info_t paraminfo, parameter_index_t paramindex);
+	bool					LoadParam64(unsigned __int64 param, parameter_index_t paramindex);
+	size_t					PushAllParameters(bool right_to_left = true);
+
 
 	void					Epilogue64();
 

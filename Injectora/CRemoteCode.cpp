@@ -85,6 +85,111 @@ void CRemoteCode::PushUNICODEString(const wchar_t* szString)
 	PushParameter(PARAMETER_TYPE_WSTRING, (void*)szString);
 }
 
+void CRemoteCode::LoadStringParam64(parameter_info_t paraminfo, parameter_index_t paramindex)
+{
+	if (paraminfo.ptype == PARAMETER_TYPE_STRING)
+	{
+		char* szParameter = (char*)paraminfo.pparam;
+
+		string_alloc_t s;
+		s.size = (ULONG)(strlen(szParameter) + 1);
+		s.ptr = CommitMemory(szParameter, s.size);
+		if (s.ptr == NULL)
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("NULL Allocated ANSI string pointer....");
+			#endif
+			return;
+		}
+
+		m_CurrentInvokeInfo.strings.push_back(s);
+		if (m_bIs64bit)
+		{
+			LoadParam64((unsigned __int64)s.ptr, paramindex);
+		}
+		else
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[LoadStringType64] Not a 64 bit process!");
+			#endif
+		}
+	}
+	else if (paraminfo.ptype == PARAMETER_TYPE_WSTRING)
+	{
+		wchar_t *szParameter = (wchar_t *)paraminfo.pparam;
+
+		string_alloc_t s;
+		s.size = (ULONG)(wcslen(szParameter) * 2) + 1;
+		s.ptr = CommitMemory(szParameter, s.size);
+		if (s.ptr == NULL)
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("NULL Allocated UNICODE string pointer....");
+			#endif
+			return;
+		}
+
+		m_CurrentInvokeInfo.strings.push_back(s);
+
+		if (m_bIs64bit)
+		{
+			LoadParam64((unsigned __int64)s.ptr, paramindex);
+		}
+		else
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[LoadStringType64] Not a 64 bit process!");
+			#endif
+		}
+	}
+}
+
+bool CRemoteCode::LoadParam64(unsigned __int64 pparam, parameter_index_t paramindex)
+{
+	switch (paramindex)
+	{
+	case PARAMETER_INDEX_RCX:
+	{
+		// mov  rcx, pparam
+		AddByteToBuffer(0x48);
+		AddByteToBuffer(0xB9);
+		AddLong64ToBuffer(pparam);
+
+		break;
+	}
+	case PARAMETER_INDEX_RDX:
+	{
+		// mov  rdx, ulRdxParam
+		AddByteToBuffer(0x48);
+		AddByteToBuffer(0xBA);
+		AddLong64ToBuffer(pparam);
+
+		break;
+	}
+	case PARAMETER_INDEX_R8:
+	{
+		// mov  r8, ulR8Param
+		AddByteToBuffer(0x49);
+		AddByteToBuffer(0xB8);
+		AddLong64ToBuffer(pparam);
+
+		break;
+	}
+	case PARAMETER_INDEX_R9:
+	{
+		// mov  r9, ulR9Param
+		AddByteToBuffer(0x49);
+		AddByteToBuffer(0xB9);
+		AddLong64ToBuffer(pparam);
+
+		break;
+	}
+	default:
+		return false;
+	}
+	return true;
+}
+
 void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 {
 	#ifdef DEBUG_MESSAGES_ENABLED
@@ -93,10 +198,7 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 
 	int iFunctionBegin = (int)m_CurrentInvokeInfo.params.size();
 
-	if (m_bIs64bit)
-		m_CurrentInvokeInfo.calladdress = (unsigned __int64)CallAddress;
-	else
-		m_CurrentInvokeInfo.calladdress = (unsigned long)CallAddress;
+	m_CurrentInvokeInfo.calladdress = m_bIs64bit ? (unsigned __int64)CallAddress : (unsigned long)CallAddress;
 	
 	m_CurrentInvokeInfo.cconv = cconv;
 
@@ -112,18 +214,16 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 			Prologue64();
 
 			////////////////////////////////////////////////////////////////////////////////////////////////
-			/// First things first. 64 bit mandatory "shadow" space of at least 32 bytes for EVERY call *///
+			/// First things first. 64 bit mandatory "shadow" space of at least 32 bytes for EVERY call  ///
 			/// Stack is 16 byte aligned. Every other param after rcx, rdx, r8, and r9 */				 ///
-			/// should be pushed onto the stack */														 ///
+			/// should be pushed onto the stack 														 ///
 			////////////////////////////////////////////////////////////////////////////////////////////////
-
 			//
 			// reserve stack size (0x28 - minimal size for 4 registers and return address)
 			// after call, stack must be aligned on 16 bytes boundary
 			//
 			size_t rsp_dif = (m_CurrentInvokeInfo.params.size() > 4) ? m_CurrentInvokeInfo.params.size() * sizeof(size_t) : 0x28;
 			rsp_dif = Utils::Align(rsp_dif, 0x10);
-
 			// sub  rsp, (rsp_dif + 8)
 			AddByteToBuffer(0x48);
 			AddByteToBuffer(0x83);
@@ -132,64 +232,26 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 
 			if (iFunctionBegin > 0)
 			{
-				if (m_CurrentInvokeInfo.params[0].pparam)
+				for (int i = 0; i < PARAMETER_INDEX_MAX; i++)
 				{
-					unsigned __int64 ulRcxParam = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // rcx param
-					// mov  rcx, ulRcxParam
-					AddByteToBuffer(0x48);
-					AddByteToBuffer(0xB9);			// mov  rcx, ulRcxParam
-					AddLong64ToBuffer(ulRcxParam);	// 
+					if (m_CurrentInvokeInfo.params.size() == 0)
+						break;
 
-					// erase rcx param
-					m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
-
-					if (m_CurrentInvokeInfo.params.size() > 0)
+					if (m_CurrentInvokeInfo.params[0].ptype & _PARAMETER_TYPE_STRING)
 					{
-						if (m_CurrentInvokeInfo.params[0].pparam)
-						{
-							unsigned __int64 ulRdxParam = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // rdx param
-							// mov  rdx, ulRdxParam
-							AddByteToBuffer(0x48);
-							AddByteToBuffer(0xBA);			// mov  rdx, ulRdxParam
-							AddLong64ToBuffer(ulRdxParam);	// 
+						LoadStringParam64(m_CurrentInvokeInfo.params[0], (parameter_index_t)i);
+					}
+					else
+					{
+						unsigned __int64 param = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // rcx param
+						LoadParam64(param, (parameter_index_t)i);
+					}
 
-							// erase rdx param
-							m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
-
-							if (m_CurrentInvokeInfo.params.size() > 0)
-							{
-								if (m_CurrentInvokeInfo.params[0].pparam)
-								{
-									unsigned __int64 ulR8Param = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // r8 param
-									// mov  r8, ulR8Param
-									AddByteToBuffer(0x49);
-									AddByteToBuffer(0xB8);			// mov  r8, ulR8Param
-									AddLong64ToBuffer(ulR8Param);	// 
-
-									// erase r8 param
-									m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
-
-									if (m_CurrentInvokeInfo.params.size() > 0)
-									{
-										if (m_CurrentInvokeInfo.params[0].pparam)
-										{
-											unsigned __int64 ulR9Param = *(unsigned __int64*)m_CurrentInvokeInfo.params[0].pparam; // r9 param
-											// mov  r9, ulR9Param
-											AddByteToBuffer(0x49);
-											AddByteToBuffer(0xB9);			// mov  r9, ulR9Param
-											AddLong64ToBuffer(ulR9Param);	// 
-
-											// erase r9 param
-											m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
-
-										} // ulR9Param
-									}
-								} // ulR8Param
-							}
-						} // ulRdxParam
-					}		
-				} // ulRcxParam
+					m_CurrentInvokeInfo.params.erase(m_CurrentInvokeInfo.params.begin());
+				}
 			}		
+
+			PushAllParameters(true);
 
 			//
 			// Call function address, and clean stack
@@ -412,6 +474,8 @@ bool CRemoteCode::ExecuteRemoteThreadBuffer(remote_thread_buffer_t thread_data, 
 	if (hThreadHandle == INVALID_HANDLE_VALUE)
 	{
 		RemoteFreeMemory(RemoteBuffer, thread_data.size());
+
+		// Destroy remote buffer for next one
 		DestroyRemoteThreadBuffer();
 
 		#ifdef DEBUG_MESSAGES_ENABLED
@@ -430,6 +494,7 @@ bool CRemoteCode::ExecuteRemoteThreadBuffer(remote_thread_buffer_t thread_data, 
 
 	RemoteFreeMemory(RemoteBuffer, thread_data.size());
 
+	// Destroy remote buffer for next one
 	DestroyRemoteThreadBuffer();
 
 	return true;
@@ -438,9 +503,7 @@ bool CRemoteCode::ExecuteRemoteThreadBuffer(remote_thread_buffer_t thread_data, 
 void CRemoteCode::DestroyRemoteThreadBuffer()
 {
 	for (size_t i = 0; i < m_CurrentInvokeInfo.strings.size(); i++)
-	{
 		RemoteFreeMemory(m_CurrentInvokeInfo.strings[i].ptr, m_CurrentInvokeInfo.strings[i].size);
-	}
 
 	m_CurrentInvokeInfo.calladdress = 0;
 	m_CurrentInvokeInfo.params.clear();
@@ -449,7 +512,7 @@ void CRemoteCode::DestroyRemoteThreadBuffer()
 
 __inline HANDLE NtCreateThreadEx(HANDLE hProcess, LPVOID lpRemoteThreadStart, LPVOID lpParam)
 {
-	NTCREATETHREADEX fnNtCreateThreadEx = (NTCREATETHREADEX)GetProcAddress(GetModuleHandle("ntdll.dll"), "NtCreateThreadEx");
+	NTCREATETHREADEX fnNtCreateThreadEx = (NTCREATETHREADEX)Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "NtCreateThreadEx");
 	if (fnNtCreateThreadEx == NULL)
 		return NULL;
 
@@ -457,9 +520,7 @@ __inline HANDLE NtCreateThreadEx(HANDLE hProcess, LPVOID lpRemoteThreadStart, LP
 	HRESULT hRes = 0;
 
 	if (!NT_SUCCESS(fnNtCreateThreadEx(&hRemoteThread, THREAD_ALL_ACCESS, NULL, hProcess, lpRemoteThreadStart, lpParam, 0, 0, 0x1000, 0x100000, NULL)))
-	{
 		return NULL;
-	}
 
 	return hRemoteThread;
 }
@@ -467,15 +528,14 @@ __inline HANDLE NtCreateThreadEx(HANDLE hProcess, LPVOID lpRemoteThreadStart, LP
 HANDLE CRemoteCode::CreateRemoteThreadInProcess(LPTHREAD_START_ROUTINE lpThread, LPVOID lpParam)
 {
 	printf("lpThread: 0x%llp\n", lpThread);
-
-	if (GetProcAddress(GetModuleHandle("ntdll.dll"), "NtCreateThreadEx"))
-	{
-		return NtCreateThreadEx(m_hProcess, lpThread, lpParam);
-	}
-	else
-	{
-		return CreateRemoteThread(m_hProcess, NULL, NULL, lpThread, lpParam, NULL, NULL);
-	}	
+	return CreateRemoteThread(m_hProcess, NULL, NULL, lpThread, lpParam, NULL, NULL);
+	//if (Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "NtCreateThreadEx"))
+	//{
+	//return NtCreateThreadEx(m_hProcess, lpThread, lpParam);
+	//}
+	//else
+	//{
+	//}	
 }
 
 void CRemoteCode::Prologue64()
@@ -568,14 +628,16 @@ void CRemoteCode::AddLong64ToBuffer(unsigned __int64 in)
 	AddLongToBuffer(highInt32);
 }
 
-void CRemoteCode::PushAllParameters(bool right_to_left)
+size_t CRemoteCode::PushAllParameters(bool right_to_left)
 {
 	if (m_CurrentInvokeInfo.params.size() == 0)
-		return;
+		return 0;
 
 	#ifdef DEBUG_MESSAGES_ENABLED
 	DebugShout("Number of parameters for function [%i]", m_CurrentInvokeInfo.params.size());
 	#endif
+
+	size_t stackSize = 0;
 
 	vector<parameter_info_t> currentParams = m_CurrentInvokeInfo.params;
 	vector<parameter_info_t> pushOrder;
@@ -625,6 +687,8 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 		if (paraminfo == NULL)
 			continue;
 
+		stackSize += sizeof(size_t);
+
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("Function Iter [%i] Parameter [%s]", p, ParameterTypeToString(paraminfo->ptype).c_str());
 		#endif
@@ -639,7 +703,6 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 
 		switch (paraminfo->ptype)
 		{
-		//case PARAMETER_TYPE_POINTER:	// 
 		case PARAMETER_TYPE_DOUBLE:		// all the same shit 8 bytes
 		case PARAMETER_TYPE_INT64:		//
 		{
@@ -649,7 +712,7 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 
 				if (m_bIs64bit)
 				{
-					// mov rax, 0xACEACEACACEACEAC ; ulParam
+					// mov rax, ulParam
 					// push rax
 					AddByteToBuffer(0x48);
 					AddByteToBuffer(0xB8);
@@ -659,7 +722,6 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 				else
 				{
 					// ill do this later
-
 					unsigned long ulParam = *(unsigned long *)paraminfo->pparam;
 					// push ulParam
 					AddByteToBuffer(0x68);
@@ -680,15 +742,15 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 		{
 			if (paraminfo->pparam)
 			{
-				unsigned __int64 ulParam = *(unsigned __int64 *)paraminfo->pparam;
+				unsigned __int64 ulParam = *(unsigned __int64*)paraminfo->pparam;
 
 				if (m_bIs64bit)
 				{
-					// mov rax, 0xACEACEACACEACEAC ; ulParam
-					// push rax
+					// mov rax, ulParam
 					AddByteToBuffer(0x48);
 					AddByteToBuffer(0xB8);
 					AddLong64ToBuffer(ulParam);
+					// push rax
 					AddByteToBuffer(0x50);
 				}
 				else
@@ -720,6 +782,8 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 				// push ulParam
 				AddByteToBuffer(0x68);
 				AddLongToBuffer(ulParam);
+
+				stackSize += sizeof(size_t); // allocate 8 bytes cause 64 bit is a cunt
 			}
 			else
 			{
@@ -759,7 +823,6 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 			char* szParameter = (char*)paraminfo->pparam;
 
 			string_alloc_t s;
-
 			s.size = (ULONG)(strlen(szParameter) + 1);
 			s.ptr = CommitMemory(szParameter, s.size);
 			if (s.ptr == NULL)
@@ -767,7 +830,6 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 				#ifdef DEBUG_MESSAGES_ENABLED
 				DebugShout("NULL Allocated ANSI string pointer....");
 				#endif
-
 				continue; // bad beans
 			}
 
@@ -775,10 +837,10 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 			if (m_bIs64bit)
 			{
 				// mov rax, s.ptr
-				// push rax
 				AddByteToBuffer(0x48);
 				AddByteToBuffer(0xB8);
 				AddLong64ToBuffer((unsigned __int64)s.ptr);
+				// push rax
 				AddByteToBuffer(0x50);
 			}
 			else
@@ -795,16 +857,13 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 			wchar_t *szParameter = (wchar_t *)paraminfo->pparam;
 
 			string_alloc_t s;
-
 			s.size = (ULONG)(wcslen(szParameter) * 2) + 1;
 			s.ptr = CommitMemory(szParameter, s.size);
-
 			if (s.ptr == NULL)
 			{
 				#ifdef DEBUG_MESSAGES_ENABLED
 				DebugShout("NULL Allocated UNICODE string pointer....");
 				#endif
-
 				continue; //bad beans
 			}
 
@@ -812,11 +871,11 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 
 			if (m_bIs64bit)
 			{
-				// mov rax, s.ptr
-				// push rax
+				// mov rax, s.ptr			
 				AddByteToBuffer(0x48);
 				AddByteToBuffer(0xB8);
 				AddLong64ToBuffer((unsigned __int64)s.ptr);
+				// push rax
 				AddByteToBuffer(0x50);
 			}
 			else
@@ -839,6 +898,8 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 
 		} //end of switch statement
 	}
+
+	return stackSize;
 }
 
 void* CRemoteCode::CommitMemory(void *data, SIZE_T size_of_data)

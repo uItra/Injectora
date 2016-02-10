@@ -135,6 +135,7 @@
   <ItemGroup>
     <ClInclude Include="AboutComponent.h" />
     <ClInclude Include="AboutWindow.h" />
+    <ClInclude Include="Asm.h" />
     <ClInclude Include="CRemoteCode.h" />
     <ClInclude Include="CRemoteLoader.h" />
     <ClInclude Include="Injector.h" />
@@ -511,6 +512,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AboutWindow.cpp" />
+    <ClCompile Include="Asm.cpp" />
     <ClCompile Include="CRemoteCode.cpp" />
     <ClCompile Include="CRemoteLoader.cpp" />
     <ClCompile Include="Injector.cpp" />

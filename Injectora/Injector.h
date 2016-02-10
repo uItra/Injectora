@@ -15,22 +15,24 @@ public:
 	Injector(Injector& other);
 
 	BOOL CheckValidProcessExtension(const char* name);
-	DWORD GetProcessIdByName(const char* process);
+	DWORD GetProcessId();
 	void EnableDebugPriv() { Utils::SetDebugPrivilege(TRUE); };
-	void SetProcessName(String name);
-	void SetDLLName(String name);
-	void SetManualMap(bool bManualMap);
-	void SetAutoInject(bool bAutoInj);
-	void SetCloseOnInject(bool bCloseOnInj);
+
+	void SetProcessName(String name) { processName = name; }
+	void SetDLLName(String dllname) { DLL = dllname; }
+	void SetAutoInject(bool bAutoInj) { autoInject = bAutoInj; }
+	void SetManualMap(bool bManualMap) { isManualMap = bManualMap; }
+	void SetCloseOnInject(bool bCloseOnInj) { closeOnInject = bCloseOnInj; }
+
 	void timerCallback();
-	void terminateTimer();
-	bool isTimerAlive();
-	void beginTimer();
+	void beginTimer() { startTimer(750); }
+	void terminateTimer() { stopTimer(); }
+	bool isTimerAlive() { return isTimerRunning(); }
+
 	bool Setup();
 
 	HRESULT ManualMap(String filePath);
 	BOOL LoadLibraryInject(String filePath);
-
 
 private:
 	bool autoInject;
@@ -44,4 +46,7 @@ private:
 	DWORD processId;
 	HANDLE processHandle;
 	CRemoteLoader remoteLoader;
+
+	HMODULE hNtdll;
+	tNTQSI fnQSI;
 };
