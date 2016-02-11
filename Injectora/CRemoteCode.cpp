@@ -15,7 +15,7 @@ void CRemoteCode::PushParameter(parameter_type_t param_type, void *param)
 	pi.pparam = param;
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("Adding parameter to function [%i][0x%X]", pi.ptype, pi.pparam);
+	DebugShout("Adding parameter to function [%i][0x%llp]", pi.ptype, pi.pparam);
 	#endif
 
 	m_CurrentInvokeInfo.params.push_back(pi);
@@ -25,83 +25,88 @@ void CRemoteCode::PushUInt(unsigned int i)
 {
 	unsigned int *iUse = new unsigned int;
 	*iUse = i;
-	PushParameter(PARAMETER_TYPE_INT, iUse);
+	PushParameter(PARAM_TYPE_INT, iUse);
 }
 
 void CRemoteCode::PushInt(int i)
 {
 	int *iUse = new int;
 	*iUse = i;
-	PushParameter(PARAMETER_TYPE_INT, iUse);
+	PushParameter(PARAM_TYPE_INT, iUse);
 }
 
 void CRemoteCode::PushUInt64(unsigned __int64 i)
 {
 	unsigned __int64 *iUse = new unsigned __int64;
 	*iUse = i;
-	PushParameter(PARAMETER_TYPE_INT64, iUse);
+	PushParameter(PARAM_TYPE_INT64, iUse);
 }
 
 void CRemoteCode::PushInt64(__int64 i)
 {
 	__int64 *iUse = new __int64;
 	*iUse = i;
-	PushParameter(PARAMETER_TYPE_INT64, iUse);
+	PushParameter(PARAM_TYPE_INT64, iUse);
 }
 
 void CRemoteCode::PushBool(bool b)
 {
 	bool *bUse = new bool;
 	*bUse = b;
-	PushParameter(PARAMETER_TYPE_BOOL, bUse);
+	PushParameter(PARAM_TYPE_BOOL, bUse);
 }
 
 void CRemoteCode::PushShort(short s)
 {
 	short *sUse = new short;
 	*sUse = s;
-	PushParameter(PARAMETER_TYPE_SHORT, sUse);
+	PushParameter(PARAM_TYPE_SHORT, sUse);
 }
 
 void CRemoteCode::PushFloat(float f)
 {
 	float *fUse = new float;
 	*fUse = f;
-	PushParameter(PARAMETER_TYPE_FLOAT, fUse);
+	PushParameter(PARAM_TYPE_FLOAT, fUse);
 }
 
 void CRemoteCode::PushDouble(double d)
 {
 	double* dUse = new double;
 	*dUse = d;
-	PushParameter(PARAMETER_TYPE_DOUBLE, dUse);
+	PushParameter(PARAM_TYPE_DOUBLE, dUse);
 }
 
 void CRemoteCode::PushByte(unsigned char uc)
 {
 	unsigned char *ucUse = new unsigned char;
 	*ucUse = uc;
-	PushParameter(PARAMETER_TYPE_BYTE, &ucUse);
+	PushParameter(PARAM_TYPE_BYTE, &ucUse);
 }
 
 void CRemoteCode::PushPointer(void* ptr)
 {
-	PushParameter(PARAMETER_TYPE_POINTER, ptr);
+	PushParameter(PARAM_TYPE_POINTER, ptr);
 }
 
 void CRemoteCode::PushANSIString(const char* szString)
 {
-	PushParameter(PARAMETER_TYPE_STRING, (void*)szString);
+	PushParameter(PARAM_TYPE_STRING, (void*)szString);
 }
 
 void CRemoteCode::PushUNICODEString(const wchar_t* szString)
 {
-	PushParameter(PARAMETER_TYPE_WSTRING, (void*)szString);
+	PushParameter(PARAM_TYPE_WSTRING, (void*)szString);
+}
+
+void CRemoteCode::PushUNICODEStringStructure(UNICODE_STRING* ptrUnicodeString)
+{
+	PushParameter(PARAM_TYPE_UNICODE_STRUCT, (void*)ptrUnicodeString);
 }
 
 void CRemoteCode::LoadStringParam64(parameter_info_t paraminfo, parameter_index_t paramindex)
 {
-	if (paraminfo.ptype == PARAMETER_TYPE_STRING)
+	if (paraminfo.ptype == PARAM_TYPE_STRING)
 	{
 		char* szParameter = (char*)paraminfo.pparam;
 
@@ -128,7 +133,7 @@ void CRemoteCode::LoadStringParam64(parameter_info_t paraminfo, parameter_index_
 			#endif
 		}
 	}
-	else if (paraminfo.ptype == PARAMETER_TYPE_WSTRING)
+	else if (paraminfo.ptype == PARAM_TYPE_WSTRING)
 	{
 		wchar_t *szParameter = (wchar_t *)paraminfo.pparam;
 
@@ -156,13 +161,52 @@ void CRemoteCode::LoadStringParam64(parameter_info_t paraminfo, parameter_index_
 			#endif
 		}
 	}
+	else if (paraminfo.ptype == PARAM_TYPE_UNICODE_STRUCT)
+	{
+		UNICODE_STRING unicodeParameter = *(UNICODE_STRING*)paraminfo.pparam;
+		
+		string_alloc_t s;
+		s.size = (ULONG)(unicodeParameter.MaximumLength * 2) + 1;
+		s.ptr = CommitMemory(unicodeParameter.Buffer, s.size);
+		if (s.ptr == NULL)
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("NULL Allocated UNICODE string pointer....");
+			#endif
+			return;
+		}
+
+		m_CurrentInvokeInfo.strings.push_back(s);
+
+		UNICODE_STRING unicodeParamAlloc;
+		unicodeParamAlloc.Buffer = (wchar_t*)s.ptr;
+		unicodeParamAlloc.Length = unicodeParameter.Length;
+		unicodeParamAlloc.MaximumLength = unicodeParameter.MaximumLength;
+
+		struct_alloc_t unicodeStringAlloc;
+		unicodeStringAlloc.size = (ULONG)sizeof(UNICODE_STRING);
+		unicodeStringAlloc.ptr = CommitMemory(&unicodeParamAlloc, unicodeStringAlloc.size);
+
+		m_CurrentInvokeInfo.structs.push_back(unicodeStringAlloc);
+
+		if (m_bIs64bit)
+		{
+			LoadParam64((unsigned __int64)unicodeStringAlloc.ptr, paramindex);
+		}
+		else
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[LoadStringType64] Not a 64 bit process!");
+			#endif
+		}
+	}
 }
 
 bool CRemoteCode::LoadParam64(unsigned __int64 pparam, parameter_index_t paramindex)
 {
 	switch (paramindex)
 	{
-	case PARAMETER_INDEX_RCX:
+	case PARAM_INDEX_RCX:
 	{
 		// mov  rcx, pparam
 		AddByteToBuffer(0x48);
@@ -171,7 +215,7 @@ bool CRemoteCode::LoadParam64(unsigned __int64 pparam, parameter_index_t paramin
 
 		break;
 	}
-	case PARAMETER_INDEX_RDX:
+	case PARAM_INDEX_RDX:
 	{
 		// mov  rdx, ulRdxParam
 		AddByteToBuffer(0x48);
@@ -180,7 +224,7 @@ bool CRemoteCode::LoadParam64(unsigned __int64 pparam, parameter_index_t paramin
 
 		break;
 	}
-	case PARAMETER_INDEX_R8:
+	case PARAM_INDEX_R8:
 	{
 		// mov  r8, ulR8Param
 		AddByteToBuffer(0x49);
@@ -189,7 +233,7 @@ bool CRemoteCode::LoadParam64(unsigned __int64 pparam, parameter_index_t paramin
 
 		break;
 	}
-	case PARAMETER_INDEX_R9:
+	case PARAM_INDEX_R9:
 	{
 		// mov  r9, ulR9Param
 		AddByteToBuffer(0x49);
@@ -207,7 +251,7 @@ bool CRemoteCode::LoadParam64(unsigned __int64 pparam, parameter_index_t paramin
 void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 {
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("PushCall [%s][0x%X]", CallingConventionToString(cconv).c_str(), CallAddress);
+	DebugShout("PushCall [%s][0x%llp]", CallingConventionToString(cconv).c_str(), CallAddress);
 	#endif
 
 	int iFunctionBegin = (int)m_CurrentInvokeInfo.params.size();
@@ -228,12 +272,12 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 			//BeginCall64();
 
 			////////////////////////////////////////////////////////////////////////////////////////////////
-			/// First things first. 64 bit mandatory "shadow" space of at least 32 bytes for EVERY call  ///
-			/// Stack is 16 byte aligned. Every other param after rcx, rdx, r8, and r9 */				 ///
-			/// should be pushed onto the stack 														 ///
+			//  First things first. 64 bit mandatory "shadow" space of at least 40 bytes for EVERY call   //
+			//  Stack is 16 byte aligned. Every other param after rcx, rdx, r8, and r9 */				  //
+			//  should be pushed onto the stack 														  //
 			////////////////////////////////////////////////////////////////////////////////////////////////
 			//
-			// reserve stack size (0x28 - minimal size for 4 registers and return address)
+			// Reserve stack size (0x28 - minimal size for 4 registers and return address)
 			// after call, stack must be aligned on 16 bytes boundary
 			//
 			size_t rsp_dif = (m_CurrentInvokeInfo.params.size() > 4) ? m_CurrentInvokeInfo.params.size() * sizeof(size_t) : 0x28;
@@ -246,12 +290,12 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 
 			if (iFunctionBegin > 0)
 			{
-				for (int i = 0; i < PARAMETER_INDEX_MAX; i++)
+				for (int i = 0; i < PARAM_INDEX_MAX; i++)
 				{
 					if (m_CurrentInvokeInfo.params.size() == 0)
 						break;
 
-					if (_PARAMETER_TYPE_STRING(m_CurrentInvokeInfo.params[0].ptype))
+					if (_PARAM_TYPE_STRING(m_CurrentInvokeInfo.params[0].ptype))
 					{
 						LoadStringParam64(m_CurrentInvokeInfo.params[0], (parameter_index_t)i);
 					}
@@ -307,7 +351,6 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 			}
 			else // fastcall
 			{
-
 				unsigned long ulEdxParam = *(unsigned long *)m_CurrentInvokeInfo.params[0].pparam; // edx param
 				unsigned long ulEaxParam = *(unsigned long *)m_CurrentInvokeInfo.params[1].pparam; // eax param
 				//mov edx, ulEdxParam
@@ -338,8 +381,6 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 		#endif
 
 		int iCalculateAddEsp = (iFunctionBegin * 4);
-		if (m_bIs64bit)
-			iCalculateAddEsp *= 2;
 
 		bool rightToLeft = true;
 		PushAllParameters(rightToLeft);
@@ -400,11 +441,11 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 		}
 
 		// first parameter of __thiscall is ALWAYS ECX. ALWAYS.
-		// the parameter type should also be PARAMETER_TYPE_POINTER
-		if (m_CurrentInvokeInfo.params[0].ptype != PARAMETER_TYPE_POINTER)
+		// the parameter type should also be PARAM_TYPE_POINTER
+		if (m_CurrentInvokeInfo.params[0].ptype != PARAM_TYPE_POINTER)
 		{
 			#ifdef DEBUG_MESSAGES_ENABLED
-			DebugShout("Warning: \"THIS\" parameter type invalid [%i], should be PARAMETER_TYPE_POINTER", m_CurrentInvokeInfo.params[0].ptype);
+			DebugShout("Warning: \"THIS\" parameter type invalid [%i], should be PARAM_TYPE_POINTER", m_CurrentInvokeInfo.params[0].ptype);
 			#endif
 		}
 
@@ -438,28 +479,6 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 	m_CurrentInvokeInfo.calladdress = NULL;
 }
 
-remote_thread_buffer_t CRemoteCode::AssembleRemoteThreadBuffer()
-{
-	if (m_bIs64bit)
-	{
-		// Restore Registers and return
-		EndCall64();
-	}
-	else
-	{
-		// Zero eax and return
-		// xor eax, eax
-		AddByteToBuffer(0x33);
-		AddByteToBuffer(0xC0);
-		// ret 4
-		AddByteToBuffer(0xC2);
-		AddByteToBuffer(0x04);
-		AddByteToBuffer(0x00);
-	}
-
-	return GetRemoteThreadBuffer();
-}
-
 remote_thread_buffer_t CRemoteCode::GetRemoteThreadBuffer()
 {
 	return m_CurrentRemoteThreadBuffer;
@@ -471,32 +490,34 @@ bool CRemoteCode::ExecuteRemoteThreadBuffer(remote_thread_buffer_t thread_data, 
 	DebugShoutBufferHex();
 	#endif
 
+	void* RemoteBuffer = NULL;
+
 	unsigned char *newBuffer = new unsigned char[thread_data.size()];
 
 	for (int i = 0; i < (int)thread_data.size(); i++)
-	{
 		newBuffer[i] = thread_data[i];
-	}
 
-	void *RemoteBuffer = CommitMemory(newBuffer, thread_data.size());
+	RemoteBuffer = CommitMemory(newBuffer, thread_data.size());
 
 	delete[] newBuffer;
 
 	if (RemoteBuffer == NULL)
 		return false;
 
+	#ifdef DEBUG_MESSAGES_ENABLED
+	DebugShout("RemoteBuffer: 0x%llp\n", RemoteBuffer);
+	#endif
+
 	HANDLE hThreadHandle = CreateRemoteThreadInProcess((LPTHREAD_START_ROUTINE)RemoteBuffer, NULL); 
 	if (hThreadHandle == INVALID_HANDLE_VALUE)
 	{
 		RemoteFreeMemory(RemoteBuffer, thread_data.size());
-
 		// Destroy remote buffer for next one
 		DestroyRemoteThreadBuffer();
 
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("Failed to execute remote buffer in process 0x%X", m_hProcess);
 		#endif
-
 		return false;
 	}
 
@@ -504,7 +525,7 @@ bool CRemoteCode::ExecuteRemoteThreadBuffer(remote_thread_buffer_t thread_data, 
 	DebugShout("Remote Buffer Executed in process 0x%X", m_hProcess);
 	#endif
 
-	if (async == true)
+	if (async)
 		WaitForSingleObject(hThreadHandle, INFINITE);
 
 	RemoteFreeMemory(RemoteBuffer, thread_data.size());
@@ -517,8 +538,12 @@ bool CRemoteCode::ExecuteRemoteThreadBuffer(remote_thread_buffer_t thread_data, 
 
 void CRemoteCode::DestroyRemoteThreadBuffer()
 {
+	// Free remote strings
 	for (size_t i = 0; i < m_CurrentInvokeInfo.strings.size(); i++)
 		RemoteFreeMemory(m_CurrentInvokeInfo.strings[i].ptr, m_CurrentInvokeInfo.strings[i].size);
+	// Free remote structs
+	for (size_t i = 0; i < m_CurrentInvokeInfo.structs.size(); i++)
+		RemoteFreeMemory(m_CurrentInvokeInfo.structs[i].ptr, m_CurrentInvokeInfo.structs[i].size);
 
 	m_CurrentInvokeInfo.calladdress = 0;
 	m_CurrentInvokeInfo.params.clear();
@@ -695,8 +720,8 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 
 		switch (paraminfo->ptype)
 		{
-		case PARAMETER_TYPE_DOUBLE:		// all the same shit 8 bytes
-		case PARAMETER_TYPE_INT64:		//
+		case PARAM_TYPE_DOUBLE:		// all the same shit 8 bytes
+		case PARAM_TYPE_INT64:		//
 		{
 			if (paraminfo->pparam)
 			{
@@ -722,7 +747,7 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 			}
 			else
 			{
-				// if it is PARAMETER_TYPE_POINTER with a NULL pointer
+				// if it is PARAM_TYPE_POINTER with a NULL pointer
 				// we don't want to crash
 				// push 0
 				AddByteToBuffer(0x68);
@@ -730,7 +755,7 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 			}
 			break;
 		}
-		case PARAMETER_TYPE_POINTER:	//
+		case PARAM_TYPE_POINTER:	//
 		{
 			if (paraminfo->pparam)
 			{
@@ -755,7 +780,7 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 			}
 			else
 			{
-				// if it is PARAMETER_TYPE_POINTER with a NULL pointer
+				// if it is PARAM_TYPE_POINTER with a NULL pointer
 				// we don't want to crash
 				// push 0
 				AddByteToBuffer(0x68);
@@ -763,9 +788,9 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 			}
 			break;
 		}
-		case PARAMETER_TYPE_SHORT:		// all the same shit 4 bytes
-		case PARAMETER_TYPE_INT:		//
-		case PARAMETER_TYPE_FLOAT:		//
+		case PARAM_TYPE_SHORT:		// all the same shit 4 bytes
+		case PARAM_TYPE_INT:		//
+		case PARAM_TYPE_FLOAT:		//
 		{
 			if (paraminfo->pparam)
 			{
@@ -777,7 +802,7 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 			}
 			else
 			{
-				// if it is PARAMETER_TYPE_POINTER with a NULL pointer
+				// if it is PARAM_TYPE_POINTER with a NULL pointer
 				// we don't want to crash
 				// push 0
 				AddByteToBuffer(0x68);
@@ -786,7 +811,7 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 
 			break;
 		}
-		case PARAMETER_TYPE_BYTE:
+		case PARAM_TYPE_BYTE:
 		{
 			unsigned char ucParam = *(unsigned char*)paraminfo->pparam;
 
@@ -796,7 +821,7 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 
 			break;
 		}
-		case PARAMETER_TYPE_BOOL:
+		case PARAM_TYPE_BOOL:
 		{
 			bool bParam = *(bool*)paraminfo->pparam;
 
@@ -808,7 +833,7 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 
 			break;
 		}
-		case PARAMETER_TYPE_STRING:
+		case PARAM_TYPE_STRING:
 		{
 			char* szParameter = (char*)paraminfo->pparam;
 
@@ -842,7 +867,7 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 
 			break;
 		}
-		case PARAMETER_TYPE_WSTRING:
+		case PARAM_TYPE_WSTRING:
 		{
 			wchar_t *szParameter = (wchar_t *)paraminfo->pparam;
 
@@ -876,6 +901,38 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 			}
 
 			break;
+		}
+		case PARAM_TYPE_UNICODE_STRUCT:
+		{
+			UNICODE_STRING unicodeParameter = *(UNICODE_STRING*)paraminfo->pparam;
+		
+			string_alloc_t s;
+			s.size = (ULONG)(unicodeParameter.MaximumLength * 2) + 1;
+			s.ptr = CommitMemory(unicodeParameter.Buffer, s.size);
+			if (s.ptr == NULL)
+			{
+				#ifdef DEBUG_MESSAGES_ENABLED
+				DebugShout("NULL Allocated UNICODE string pointer....");
+				#endif
+				return;
+			}
+
+			m_CurrentInvokeInfo.strings.push_back(s);
+
+			UNICODE_STRING unicodeParamAlloc;
+			unicodeParamAlloc.Buffer = (wchar_t*)s.ptr;
+			unicodeParamAlloc.Length = unicodeParameter.Length;
+			unicodeParamAlloc.MaximumLength = unicodeParameter.MaximumLength;
+
+			struct_alloc_t unicodeStringAlloc;
+			unicodeStringAlloc.size = (ULONG)sizeof(UNICODE_STRING);
+			unicodeStringAlloc.ptr = CommitMemory(&unicodeParamAlloc, unicodeStringAlloc.size);
+
+			m_CurrentInvokeInfo.structs.push_back(unicodeStringAlloc);
+
+			// push unicodeStringAlloc.ptr
+			AddByteToBuffer(0x68);
+			AddLongToBuffer((unsigned long)unicodeStringAlloc.ptr);
 		}
 		default:
 		{
@@ -998,7 +1055,7 @@ bool CRemoteCode::CreateAPCEvent( DWORD threadID )
 		PushUInt64(NULL);	// lpEventAttributes
 		PushUInt64(TRUE);	// bManualReset
 		PushUInt64(FALSE);	// bInitialState
-		PushUNICODEString(pEventName);
+		PushUNICODEString(pEventName); // lpName
         PushCall(CCONV_WIN64, (FARPROC)CreateEventW);
 
         // Save event handle
@@ -1116,17 +1173,19 @@ string CRemoteCode::CallingConventionToString(calling_convention_t cconv)
 string CRemoteCode::ParameterTypeToString(parameter_type_t type)
 {
 	static const char *szParameterTypes[] = {
-		"PARAMETER_TYPE_INT",
-		"PARAMETER_TYPE_INT64",
-		"PARAMETER_TYPE_BOOL",
-		"PARAMETER_TYPE_SHORT",
-		"PARAMETER_TYPE_FLOAT",
-		"PARAMETER_TYPE_DOUBLE",
-		"PARAMETER_TYPE_BYTE",
-		"PARAMETER_TYPE_POINTER",
-		"PARAMETER_TYPE_STRING",
-		"PARAMETER_TYPE_WSTRING"
+		"PARAM_TYPE_INT",
+		"PARAM_TYPE_INT64",
+		"PARAM_TYPE_BOOL",
+		"PARAM_TYPE_SHORT",
+		"PARAM_TYPE_FLOAT",
+		"PARAM_TYPE_DOUBLE",
+		"PARAM_TYPE_BYTE",
+		"PARAM_TYPE_POINTER",
+		"PARAM_TYPE_STRING",
+		"PARAM_TYPE_WSTRING",
+		"PARAM_TYPE_UNICODE_STRUCT"
 	};
+	
 	return szParameterTypes[type];
 }
 

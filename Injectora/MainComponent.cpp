@@ -181,8 +181,8 @@ void MainComponent::loadSettings()
 	process.processName = settings->getStringAttribute("processName");
 	process.processId = settings->getIntAttribute("processId");
 
-	//currentProcessSelected->processName = process.processName;
-	//currentProcessSelected->processId = process.processId;
+	currentProcessSelected->processName = process.processName;
+	currentProcessSelected->processId = process.processId;
 
 	MainAppWindow* maw;
 	do 
@@ -191,7 +191,7 @@ void MainComponent::loadSettings()
 		if (maw)
 			maw->setUsingNativeTitleBar(settings->getBoolAttribute("nativeWindow"));
 	} while (!maw);
-	
+
 	settingsHaveBeenLoaded = true;
 }
 
@@ -263,12 +263,14 @@ void MainComponent::buttonClicked(Button* buttonThatWasClicked)
     }
     else if (buttonThatWasClicked == injectButton)
     {
-		//printf("Process: %s\tDLL: %s\n", processEditor->getText(), tableList->currentDll);
 		if (tableList->currentDll.length() < 2)
 		{
 			MessageBox(0, "Select a DLL!", "Injectora", MB_ICONEXCLAMATION);
 			return;
 		}
+
+		process.processId = currentProcessSelected->processId;
+		process.processName = currentProcessSelected->processName;
 
 		injector.SetProcessInformation(process);
 		injector.SetAutoInject(autoInject);

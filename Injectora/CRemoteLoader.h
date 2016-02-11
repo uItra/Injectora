@@ -1,5 +1,9 @@
 #include "CRemoteCode.h"
 
+#ifdef UNICODE
+#undef UNICODE
+#endif
+
 #ifndef _CREMOTELOAD_H_
 #define _CREMOTELOAD_H_
 
@@ -11,12 +15,15 @@
 #define IMR_RELOFFSET(x)			(x & 0xFFF)
 #endif
 
+#define MakePtr(cast, ptr, addValue) (cast)((DWORD_PTR)(ptr) + (DWORD_PTR)(addValue))
+#define MakeDelta(cast, x, y) (cast)((DWORD_PTR)(x) - (DWORD_PTR)(y))
+
 struct ModuleFile
 {
 	PVOID							Buffer;
-	INT								Size;
+	int								Size;
 
-	BOOL IsValid() { return ( Buffer && Size ); }
+	bool IsValid() { return ( Buffer && Size ); }
 };
 
 // Relocation block information
@@ -24,7 +31,6 @@ struct RelocData
 {
 	ULONG VirtualAddress;
 	ULONG SizeOfBlock;
-
 	struct
 	{
 		WORD Offset : 12;
@@ -32,34 +38,15 @@ struct RelocData
 	}Item[1];
 };
 
-class ExportData
-{
-public:
-	ExportData()
-	{
-		procAddress = 0;
-		forwardOrdinal = 0;
-		isForwarded = false;
-		forwardByOrd = false;
-	}
-
-	DWORD_PTR procAddress;          // Function address
-
-	LPCCH forwardModule;     // Name of forward module
-	LPCCH forwardName;        // Forwarded function name
-	WORD forwardOrdinal;        // Forwarded function ordinal
-
-	bool isForwarded;       // Function is forwarded to another module
-	bool forwardByOrd;      // Forward is done by ordinal
-};
-
 class CRemoteLoader : public CRemoteCode
 {
 public:
 	void							SetProcess(HANDLE hProcess);
 
-	HMODULE							LoadLibraryByPathA(LPCCH Path);
-	HMODULE							LoadLibraryByPathW(LPCWCH Path);
+	HMODULE							LoadDependencyA(LPCCH Path);
+	HMODULE							LoadDependencyW(LPCWCH Path);
+	HMODULE							LoadLibraryByPathA(LPCCH Path, ULONG Flags = NULL);
+	HMODULE							LoadLibraryByPathW(LPCWCH Path, ULONG Flags = NULL);
 	HMODULE							LoadLibraryByPathIntoMemoryA(LPCCH Path, BOOL PEHeader);
 	HMODULE							LoadLibraryByPathIntoMemoryW(LPCWCH Path, BOOL PEHeader);
 	HMODULE							LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModule, BOOL PEHeader);
@@ -68,13 +55,19 @@ private:
 	HMODULE							GetRemoteModuleHandleA(LPCCH Module);
 	HMODULE							GetRemoteModuleHandleW(LPCWCH Module);
 
-	void*							GetRemoteProcAddressImpl(HMODULE module, const char *proc_name);
+	void*							GetRemoteProcAddressImpl_DEPRECATED(HMODULE module, const char *proc_name);
 
 public:
-	FARPROC							GetRemoteProcAddress(HMODULE Module, LPCCH Function);
-	FARPROC							GetRemoteProcAddress(HMODULE Module, SHORT Function);
-	FARPROC							GetRemoteProcAddress(LPCCH Module, LPCCH Function);
-	FARPROC							GetRemoteProcAddress(LPCCH Module, SHORT Function);
+	FARPROC							GetRemoteProcAddressA(LPCCH module, SHORT procOrdinal);
+	FARPROC							GetRemoteProcAddressW(LPCWCH module, SHORT procOrdinal);
+
+	FARPROC							GetRemoteProcAddressA(LPCCH module, LPCCH procName);
+	FARPROC							GetRemoteProcAddressW(LPCWCH module, LPCWCH procName);
+
+	FARPROC							GetRemoteProcAddress_DEPRECATED(HMODULE Module, LPCCH Function);
+	FARPROC							GetRemoteProcAddress_DEPRECATED(HMODULE Module, SHORT Function);
+	FARPROC							GetRemoteProcAddress_DEPRECATED(LPCCH Module, LPCCH Function);
+	FARPROC							GetRemoteProcAddress_DEPRECATED(LPCCH Module, SHORT Function);
 
 protected:
 	IMAGE_DOS_HEADER*				ToDos(PVOID BaseAddress);
@@ -82,7 +75,6 @@ protected:
 
 	PVOID							RvaToPointer(ULONG RVA, PVOID BaseAddress);
 
-	PVOID							ImageDirectoryEntryToData( PVOID BaseAddress, USHORT DataDirectory );
 	BOOL							CallEntryPoint( PVOID BaseAddress, FARPROC Entrypoint );
 
 	BOOL							ProcessDelayedImportTable(PVOID BaseAddress, PVOID RemoteAddress);

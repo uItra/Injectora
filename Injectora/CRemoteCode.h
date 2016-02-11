@@ -18,34 +18,36 @@ typedef enum {
 
 //
 typedef enum {
-	PARAMETER_TYPE_INT = 0,
-	PARAMETER_TYPE_INT64,
-	PARAMETER_TYPE_BOOL,
-	PARAMETER_TYPE_SHORT,
-	PARAMETER_TYPE_FLOAT,
-	PARAMETER_TYPE_DOUBLE,
-	PARAMETER_TYPE_BYTE,
-	PARAMETER_TYPE_POINTER,
-	PARAMETER_TYPE_STRING,
-	PARAMETER_TYPE_WSTRING
+	PARAM_TYPE_INT = 0,
+	PARAM_TYPE_INT64,
+	PARAM_TYPE_BOOL,
+	PARAM_TYPE_SHORT,
+	PARAM_TYPE_FLOAT,
+	PARAM_TYPE_DOUBLE,
+	PARAM_TYPE_BYTE,
+	PARAM_TYPE_POINTER,
+	PARAM_TYPE_STRING,
+	PARAM_TYPE_WSTRING,
+	PARAM_TYPE_UNICODE_STRUCT
 } parameter_type_t;
 
 #ifdef _WIN64
-#define _PARAMETER_TYPE_DWORD PARAMETER_TYPE_INT | PARAMETER_TYPE_FLOAT | PARAMETER_TYPE_SHORT
-#define _PARAMETER_TYPE_QWORD PARAMETER_TYPE_INT64 | PARAMETER_TYPE_DOUBLE | PARAMETER_TYPE_POINTER | PARAMETER_TYPE_STRING | PARAMETER_TYPE_WSTRING
+#define _PARAM_TYPE_DWORD(paramType) paramType == PARAM_TYPE_INT || paramType == PARAM_TYPE_FLOAT || paramType == PARAM_TYPE_SHORT
+#define _PARAM_TYPE_QWORD(paramType) paramType == PARAM_TYPE_INT64 || paramType == PARAM_TYPE_DOUBLE || paramType == PARAM_TYPE_POINTER || paramType == PARAM_TYPE_STRING || paramType == PARAM_TYPE_WSTRING
+#define _PARAM_TYPE_STRING(paramType) paramType == PARAM_TYPE_STRING || paramType == PARAM_TYPE_WSTRING || paramType == PARAM_TYPE_UNICODE_STRUCT
 #else
-#define _PARAMETER_TYPE_DWORD PARAMETER_TYPE_INT | PARAMETER_TYPE_FLOAT | PARAMETER_TYPE_SHORT | PARAMETER_TYPE_POINTER | PARAMETER_TYPE_STRING | PARAMETER_TYPE_WSTRING
-#define _PARAMETER_TYPE_QWORD PARAMETER_TYPE_INT64 | PARAMETER_TYPE_DOUBLE
+#define _PARAM_TYPE_DWORD PARAM_TYPE_INT || PARAM_TYPE_FLOAT || PARAM_TYPE_SHORT || PARAM_TYPE_POINTER || PARAM_TYPE_STRING || PARAM_TYPE_WSTRING
+#define _PARAM_TYPE_QWORD PARAM_TYPE_INT64 || PARAM_TYPE_DOUBLE
+#define _PARAM_TYPE_STRING(paramType) paramType == PARAM_TYPE_STRING || paramType == PARAM_TYPE_WSTRING || paramType == PARAM_TYPE_UNICODE_STRUCT
 #endif
-#define _PARAMETER_TYPE_STRING(paramType) paramType == PARAMETER_TYPE_STRING || paramType == PARAMETER_TYPE_WSTRING
 
 //
 typedef enum {
-	PARAMETER_INDEX_RCX,
-	PARAMETER_INDEX_RDX,
-	PARAMETER_INDEX_R8,
-	PARAMETER_INDEX_R9,
-	PARAMETER_INDEX_MAX
+	PARAM_INDEX_RCX,
+	PARAM_INDEX_RDX,
+	PARAM_INDEX_R8,
+	PARAM_INDEX_R9,
+	PARAM_INDEX_MAX
 } parameter_index_t;
 
 //
@@ -62,9 +64,16 @@ typedef struct {
 
 //
 typedef struct {
+	ULONG						size;
+	void*						ptr;
+} struct_alloc_t;
+
+//
+typedef struct {
 	calling_convention_t		cconv;
 	vector<parameter_info_t>	params;
 	vector<string_alloc_t>		strings;
+	vector<struct_alloc_t>		structs;
 	#ifdef _WIN64
 	unsigned __int64			calladdress;
 	#else
@@ -93,10 +102,10 @@ public:
 	void					PushPointer64(void *ptr);
 	void					PushANSIString(const char* szString);
 	void					PushUNICODEString(const wchar_t* szString);
+	void					PushUNICODEStringStructure(UNICODE_STRING* ptrUnicodeString);
 
 	void					PushCall(calling_convention_t cconv, FARPROC CallAddress);
 
-	remote_thread_buffer_t	AssembleRemoteThreadBuffer();
 	remote_thread_buffer_t	GetRemoteThreadBuffer();
 
 	bool					ExecuteRemoteThreadBuffer(remote_thread_buffer_t thread_data, bool async = true);

@@ -171,25 +171,28 @@ void Injector::timerCallback()
 	DWORD pidCheck = GetProcessId();		
 	if (pidCheck != 0)
 	{
-		bool canInject = true;
-		for (int i = 0; i < oldProcessIds.size(); i++)
-		{
-			if (oldProcessIds[i] == pidCheck)
+		//if (pidCheck == processId)
+		//{
+			bool canInject = true;
+			for (int i = 0; i < oldProcessIds.size(); i++)
 			{
-				MessageBox(0, "Module already loaded into this process!", "Injectora", MB_ICONEXCLAMATION);
-				canInject = false;
-				break;
+				if (oldProcessIds[i] == pidCheck)
+				{
+					MessageBox(0, "Module already loaded into this process!", "Injectora", MB_ICONEXCLAMATION);
+					canInject = false;
+					break;
+				}
 			}
-		}
 
-		if (canInject)
-		{
-			isReady = true;
-			if (isManualMap)
-				ManualMap(DLL);
-			else
-				LoadLibraryInject(DLL);
-		}
+			if (canInject)
+			{
+				isReady = true;
+				if (isManualMap)
+					ManualMap(DLL);
+				else
+					LoadLibraryInject(DLL);
+			}
+		//}
 	}
 }
 
@@ -205,7 +208,7 @@ HRESULT Injector::ManualMap(String filePath)
 
 	if (!CheckValidProcessExtension(processName.getCharPointer()))
 	{
-		printf("Invalid Process Name!\n");
+		MessageBox(0, "Invalid Process Name!", "Injectora", MB_ICONEXCLAMATION);
 		isReady = false;
 		return 1;
 	}
@@ -301,6 +304,7 @@ BOOL Injector::LoadLibraryInject(String filePath)
 	HMODULE returnedModule = remoteLoader.LoadLibraryByPathA(filePath.getCharPointer());
 	if (returnedModule)
 	{
+		MessageBox(0, "LoadLibrary injection success!", "Injectora", MB_ICONASTERISK);
 		bRet = TRUE;
 		oldProcessIds.add(processId);
 		CloseHandle(processHandle);

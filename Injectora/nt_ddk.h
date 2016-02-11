@@ -674,10 +674,11 @@ typedef struct _OBJECT_ATTRIBUTES64
 } OBJECT_ATTRIBUTES64, *POBJECT_ATTRIBUTES64;
 
 
+typedef void	(NTAPI *tRtlInitUnicodeString)(PUNICODE_STRING DestinationString, PCWSTR SourceString);
 typedef NTSTATUS(NTAPI *tRtlGetNativeSystemInformation)(SYSTEM_INFORMATION_CLASS SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
 typedef NTSTATUS(NTAPI *tNTQIP)(HANDLE ProcessHandle, PROCESSINFOCLASS ProcessInformationClass, PVOID ProcessInformation, ULONG ProcessInformationLength, PULONG ReturnLength);
 typedef NTSTATUS(NTAPI *tNTQSI)(ULONG SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
-typedef NTSTATUS(WINAPI *NTCREATETHREADEX)
+typedef NTSTATUS(NTAPI *NTCREATETHREADEX)
 (
 __out PHANDLE ThreadHandle,
 __in ACCESS_MASK DesiredAccess,
