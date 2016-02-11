@@ -552,7 +552,7 @@ void CRemoteCode::DestroyRemoteThreadBuffer()
 
 HANDLE CRemoteCode::CreateRemoteThreadInProcess(LPTHREAD_START_ROUTINE lpThread, LPVOID lpParam)
 {
-	return Utils::NtCreateThreadEx(m_hProcess, lpThread, lpParam);
+	return Utils::NtCreateThreadEx(m_hProcess, lpThread, lpParam, NULL);
 	//return CreateRemoteThread(m_hProcess, NULL, NULL, lpThread, lpParam, NULL, NULL);
 }
 
@@ -1011,10 +1011,16 @@ DWORD CRemoteCode::CreateWorkerThread()
 
 		delete[] newBuffer;
 
-		m_hWorkThd = CreateRemoteThread(m_hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)m_pWorkerCodeThread, m_pWorkerCode, 0, &thdID);
+
+		//m_hWorkThd = CreateRemoteThread(m_hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)m_pWorkerCodeThread, m_pWorkerCode, 0, &thdID);
+		m_hWorkThd = Utils::NtCreateThreadEx(m_hProcess, (LPTHREAD_START_ROUTINE)m_pWorkerCodeThread, m_pWorkerCode, &thdID);
 
 		// Destroy remote buffer for next one
 		DestroyRemoteThreadBuffer();
+
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[CreateWorkerThread] Worker thread ID: %d ", GetThreadId(m_hWorkThd));
+		#endif
 
 		return thdID;
 	}
@@ -1110,12 +1116,18 @@ bool CRemoteCode::CreateAPCEvent( DWORD threadID )
 			return NULL;
 		}
 
-		HANDLE hThread = CreateRemoteThread(m_hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)pCodecave, m_pWorkerCode, 0, NULL);
+		HANDLE hThread = Utils::NtCreateThreadEx(m_hProcess, (LPTHREAD_START_ROUTINE)pCodecave, m_pWorkerCode, NULL);
 		if (hThread)
 		{
 			WaitForSingleObject(hThread, INFINITE);
 			// TODO: Need to find something better for 64-bit results
-			GetExitCodeThread(hThread, (LPDWORD)&dwResult);
+			if (GetExitCodeThread(hThread, (LPDWORD)&dwResult) == 0)
+			{
+				#ifdef DEBUG_MESSAGES_ENABLED
+				DebugShout("[CreateAPCEvent] Failed to get hThread Exit Code! Error: 0x%X", GetLastError());
+				#endif
+			}
+
 		}
 
         m_hWaitEvent = OpenEventW(SYNCHRONIZE | EVENT_MODIFY_STATE, FALSE, pEventName);

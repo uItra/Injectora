@@ -332,6 +332,15 @@ HMODULE CRemoteLoader::LoadLibraryByPathIntoMemoryW(LPCWCH Path, BOOL PEHeader)
 HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModule, BOOL PEHeader)
 {
 	
+	DWORD err = CreateRPCEnvironment();
+	if (err != ERROR_SUCCESS)
+	{
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[LoadLibraryFromMemory] CreateRPCEnvironment failed. Error 0x%X", err);
+		#endif
+		return NULL;
+	}
+
 	#ifdef DEBUG_MESSAGES_ENABLED
 	DebugShout("[LoadLibraryFromMemory] BaseAddress (0x%llp) - SizeOfModule (0x%llp)", BaseAddress, SizeOfModule);
 	#endif
@@ -353,8 +362,6 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 		return NULL;
 	}
 
-	// Calculated Image Size
-	size_t ImageSize = 0;
 	/*
 	  We do not trust the value of hdr.OptionalHeader.SizeOfImage so we calculate our own SizeOfImage.
 	  This is the size of the continuous memory block that can hold the headers and all sections.
@@ -374,7 +381,9 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 			rva_high = ImageSectionHeader[i].VirtualAddress + ImageSectionHeader[i].Misc.VirtualSize;
 	}
 
-	ImageSize = rva_high - rva_low;
+	// Calculated Image Size
+	size_t ImageSize = rva_high - rva_low;
+
 	#ifdef DEBUG_MESSAGES_ENABLED
 	DebugShout("[LoadLibraryFromMemory] Calculated size (0x%llp)", ImageSize);
 	DebugShout("[LoadLibraryFromMemory] SizeOfImage (0x%llp)", ImageNtHeaders->OptionalHeader.SizeOfImage);

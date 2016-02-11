@@ -4,8 +4,42 @@
 #include <Windows.h>
 #include <bcrypt.h>
 
+
+
 #define NT_SUCCESS(x) ((x) >= 0)
-#define STATUS_INFO_LENGTH_MISMATCH 0xc0000004
+#ifndef STATUS_SUCCESS
+#define STATUS_SUCCESS                 ((NTSTATUS)0x00000000L)
+#endif //!STATUS_SUCCESS
+#ifndef STATUS_UNSUCCESSFUL
+#define STATUS_UNSUCCESSFUL            ((NTSTATUS)0xC0000001L)
+#endif //!STATUS_UNSUCCESSFUL
+#ifndef STATUS_NOT_IMPLEMENTED
+#define STATUS_NOT_IMPLEMENTED         ((NTSTATUS)0xC0000002L)
+#endif //!STATUS_NOT_IMPLEMENTED
+#ifndef STATUS_INFO_LENGTH_MISMATCH
+#define STATUS_INFO_LENGTH_MISMATCH    ((NTSTATUS)0xC0000004L)
+#endif //!STATUS_INFO_LENGTH_MISMATCH
+#ifndef STATUS_NO_MEMORY
+#define STATUS_NO_MEMORY               ((NTSTATUS)0xC0000017L)
+#endif //!STATUS_NO_MEMORY
+#ifndef STATUS_ACCESS_DENIED
+#define STATUS_ACCESS_DENIED           ((NTSTATUS)0xC0000022L)
+#endif //!STATUS_ACCESS_DENIED
+#ifndef STATUS_BUFFER_TOO_SMALL
+#define STATUS_BUFFER_TOO_SMALL        ((NTSTATUS)0xC0000023L)
+#endif //!STATUS_BUFFER_TOO_SMALL
+#ifndef STATUS_PROCEDURE_NOT_FOUND
+#define STATUS_PROCEDURE_NOT_FOUND     ((NTSTATUS)0xC000007AL)
+#endif //!STATUS_PROCEDURE_NOT_FOUND
+#ifndef STATUS_NOT_SUPPORTED
+#define STATUS_NOT_SUPPORTED           ((NTSTATUS)0xC00000BBL)
+#endif //!STATUS_NOT_SUPPORTED
+#ifndef STATUS_NOT_FOUND
+#define STATUS_NOT_FOUND               ((NTSTATUS)0xC0000225L)
+#endif //!STATUS_NOT_FOUND
+#ifndef STATUS_PARTIAL_COPY
+#define STATUS_PARTIAL_COPY            ((NTSTATUS)0x8000000DL)
+#endif //!STATUS_PARTIAL_COPY
 
 typedef struct _ANSI_STRING
 {
@@ -22,13 +56,11 @@ typedef struct _UNICODE_STRING
 } UNICODE_STRING, *PUNICODE_STRING;
 
 
-#define STATUS_SUCCESS 0
-
 #define GDI_BATCH_BUFFER_SIZE 310
 #define GDI_HANDLE_BUFFER_SIZE32 34
 #define GDI_HANDLE_BUFFER_SIZE64 60
 
-#ifndef WIN64
+#ifndef _WIN64
 #define GDI_HANDLE_BUFFER_SIZE GDI_HANDLE_BUFFER_SIZE32
 #else
 #define GDI_HANDLE_BUFFER_SIZE GDI_HANDLE_BUFFER_SIZE64
@@ -85,9 +117,7 @@ typedef struct _PEB_FREE_BLOCK
 	DWORD					Size;
 } PEB_FREE_BLOCK, *PPEB_FREE_BLOCK;
 
-
 typedef void(*PPEBLOCKROUTINE)(PVOID PebLock);
-
 
 typedef struct _CLIENT_ID
 {
@@ -453,7 +483,6 @@ typedef struct _TEB
 	PVOID ReservedForWdf;
 } TEB, *PTEB;
 
-
 enum ELIST
 {
 	LIST_LoadOrder,
@@ -635,6 +664,64 @@ typedef struct _PROCESSINFO
 	TCHAR   szCmdLine[MAX_UNICODE_PATH];
 } PROCESSINFO;
 
+typedef struct _VM_COUNTERS
+{
+#ifdef _WIN64
+	SIZE_T         PeakVirtualSize;
+	SIZE_T         PageFaultCount;
+	SIZE_T         PeakWorkingSetSize;
+	SIZE_T         WorkingSetSize;
+	SIZE_T         QuotaPeakPagedPoolUsage;
+	SIZE_T         QuotaPagedPoolUsage;
+	SIZE_T         QuotaPeakNonPagedPoolUsage;
+	SIZE_T         QuotaNonPagedPoolUsage;
+	SIZE_T         PagefileUsage;
+	SIZE_T         PeakPagefileUsage;
+	SIZE_T         VirtualSize;
+#else
+	SIZE_T         PeakVirtualSize;
+	SIZE_T         VirtualSize;
+	ULONG          PageFaultCount;
+	SIZE_T         PeakWorkingSetSize;
+	SIZE_T         WorkingSetSize;
+	SIZE_T         QuotaPeakPagedPoolUsage;
+	SIZE_T         QuotaPagedPoolUsage;
+	SIZE_T         QuotaPeakNonPagedPoolUsage;
+	SIZE_T         QuotaNonPagedPoolUsage;
+	SIZE_T         PagefileUsage;
+	SIZE_T         PeakPagefileUsage;
+#endif
+} VM_COUNTERS, *PVM_COUNTERS;
+
+typedef struct _SYSTEM_PROCESSES
+{
+	ULONG            NextEntryDelta;
+	ULONG            ThreadCount;
+	ULONG            Reserved1[6];
+	LARGE_INTEGER   CreateTime;
+	LARGE_INTEGER   UserTime;
+	LARGE_INTEGER   KernelTime;
+	UNICODE_STRING  ProcessName;
+	KPRIORITY        BasePriority;
+	ULONG            ProcessId;
+	ULONG            InheritedFromProcessId;
+	ULONG            HandleCount;
+	ULONG            Reserved2[2];
+	VM_COUNTERS        VmCounters;
+#if _WIN32_WINNT >= 0x500
+	IO_COUNTERS        IoCounters;
+#endif
+	SYSTEM_THREADS  Threads[1];
+} SYSTEM_PROCESSES, *PSYSTEM_PROCESSES;
+
+typedef struct {
+	USHORT ProcessorArchitecture;
+	USHORT ProcessorLevel;
+	USHORT ProcessorRevision;
+	USHORT Reserved;
+	ULONG ProcessorFeatureBits;
+} SYSTEM_PROCESSOR_INFORMATION;
+
 typedef struct _PS_ATTRIBUTE
 {
 	ULONG Attribute;
@@ -674,11 +761,62 @@ typedef struct _OBJECT_ATTRIBUTES64
 } OBJECT_ATTRIBUTES64, *POBJECT_ATTRIBUTES64;
 
 
+#define InitializeObjectAttributes(p,n,a,r,s) { \
+(p)->Length = sizeof(OBJECT_ATTRIBUTES); \
+(p)->RootDirectory = r; \
+(p)->Attributes = a; \
+(p)->ObjectName = n; \
+(p)->SecurityDescriptor = s; \
+(p)->SecurityQualityOfService = NULL; \
+}
+
+#define InitializeObjectAttributes64(p,n,a,r,s) { \
+(p)->Length = sizeof(_OBJECT_ATTRIBUTES64); \
+(p)->RootDirectory = r; \
+(p)->Attributes = a; \
+(p)->ObjectName = n; \
+(p)->SecurityDescriptor = s; \
+(p)->SecurityQualityOfService = NULL; \
+}
+
+// begin_rev
+#define PS_ATTRIBUTE_NUMBER_MASK 0x0000FFFF
+#define PS_ATTRIBUTE_THREAD 0x00010000 // can be used with threads
+#define PS_ATTRIBUTE_INPUT 0x00020000 // input only
+#define PS_ATTRIBUTE_ADDITIVE 0x00040000 /// Is an additional option (see ProcThreadAttributeValue in WinBase.h)
+// end_rev
+
+typedef enum _PS_ATTRIBUTE_NUM {
+	PsAttributeParentProcess, // in HANDLE
+	PsAttributeDebugPort, // in HANDLE
+	PsAttributeToken, // in HANDLE
+	PsAttributeClientId, // out PCLIENT_ID
+	PsAttributeTebAddress, // out PTEB
+	PsAttributeImageName, // in PWSTR
+	PsAttributeImageInfo, // out PSECTION_IMAGE_INFORMATION
+	PsAttributeMemoryReserve, // in PPS_MEMORY_RESERVE
+	PsAttributePriorityClass, // in UCHAR
+	PsAttributeErrorMode, // in ULONG
+	PsAttributeStdHandleInfo, // 10, in PPS_STD_HANDLE_INFO
+	PsAttributeHandleList, // in PHANDLE
+	PsAttributeGroupAffinity, // in PGROUP_AFFINITY
+	PsAttributePreferredNode, // in PUSHORT
+	PsAttributeIdealProcessor, // in PPROCESSOR_NUMBER
+	PsAttributeUmsThread, // see UpdateProceThreadAttributeList in msdn (CreateProcessA/W...) in PUMS_CREATE_THREAD_ATTRIBUTES
+	PsAttributeMitigationOptions, // in UCHAR
+	PsAttributeProtectionLevel,
+	PsAttributeSecureProcess, // since THRESHOLD (Virtual Secure Mode, Device Guard)
+	PsAttributeJobList,
+	PsAttributeMax
+} PS_ATTRIBUTE_NUM;
+
+#define PsAttributeValue(Number, Thread, Input, Additive) (((Number) & PS_ATTRIBUTE_NUMBER_MASK) | ((Thread) ? PS_ATTRIBUTE_THREAD : 0) | ((Input) ? PS_ATTRIBUTE_INPUT : 0) | ((Additive) ? PS_ATTRIBUTE_ADDITIVE : 0))
+
 typedef void	(NTAPI *tRtlInitUnicodeString)(PUNICODE_STRING DestinationString, PCWSTR SourceString);
 typedef NTSTATUS(NTAPI *tRtlGetNativeSystemInformation)(SYSTEM_INFORMATION_CLASS SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
 typedef NTSTATUS(NTAPI *tNTQIP)(HANDLE ProcessHandle, PROCESSINFOCLASS ProcessInformationClass, PVOID ProcessInformation, ULONG ProcessInformationLength, PULONG ReturnLength);
 typedef NTSTATUS(NTAPI *tNTQSI)(ULONG SystemInformationClass, PVOID SystemInformation, ULONG SystemInformationLength, PULONG ReturnLength);
-typedef NTSTATUS(NTAPI *NTCREATETHREADEX)
+typedef NTSTATUS(NTAPI *tNtCreateThreadEx)
 (
 __out PHANDLE ThreadHandle,
 __in ACCESS_MASK DesiredAccess,
@@ -692,109 +830,5 @@ __in_opt SIZE_T StackSize,
 __in_opt SIZE_T MaximumStackSize,
 __in_opt PPS_ATTRIBUTE_LIST AttributeList
 );
-
-typedef struct _VM_COUNTERS
-{
-#ifdef _WIN64
-	SIZE_T         PeakVirtualSize;
-	SIZE_T         PageFaultCount;
-	SIZE_T         PeakWorkingSetSize;
-	SIZE_T         WorkingSetSize;
-	SIZE_T         QuotaPeakPagedPoolUsage;
-	SIZE_T         QuotaPagedPoolUsage;
-	SIZE_T         QuotaPeakNonPagedPoolUsage;
-	SIZE_T         QuotaNonPagedPoolUsage;
-	SIZE_T         PagefileUsage;
-	SIZE_T         PeakPagefileUsage;
-	SIZE_T         VirtualSize;
-#else
-	SIZE_T         PeakVirtualSize;
-	SIZE_T         VirtualSize;
-	ULONG          PageFaultCount;
-	SIZE_T         PeakWorkingSetSize;
-	SIZE_T         WorkingSetSize;
-	SIZE_T         QuotaPeakPagedPoolUsage;
-	SIZE_T         QuotaPagedPoolUsage;
-	SIZE_T         QuotaPeakNonPagedPoolUsage;
-	SIZE_T         QuotaNonPagedPoolUsage;
-	SIZE_T         PagefileUsage;
-	SIZE_T         PeakPagefileUsage;
-#endif
-} VM_COUNTERS;
-
-typedef struct _SYSTEM_PROCESSES
-{
-	ULONG            NextEntryDelta;
-	ULONG            ThreadCount;
-	ULONG            Reserved1[6];
-	LARGE_INTEGER   CreateTime;
-	LARGE_INTEGER   UserTime;
-	LARGE_INTEGER   KernelTime;
-	UNICODE_STRING  ProcessName;
-	KPRIORITY        BasePriority;
-	ULONG            ProcessId;
-	ULONG            InheritedFromProcessId;
-	ULONG            HandleCount;
-	ULONG            Reserved2[2];
-	VM_COUNTERS        VmCounters;
-#if _WIN32_WINNT >= 0x500
-	IO_COUNTERS        IoCounters;
-#endif
-	SYSTEM_THREADS  Threads[1];
-} SYSTEM_PROCESSES, *PSYSTEM_PROCESSES;
-
-typedef struct {
-	USHORT ProcessorArchitecture;
-	USHORT ProcessorLevel;
-	USHORT ProcessorRevision;
-	USHORT Reserved;
-	ULONG ProcessorFeatureBits;
-} SYSTEM_PROCESSOR_INFORMATION;
-
-#ifndef STATUS_SUCCESS
-#define STATUS_SUCCESS                 ((NTSTATUS)0x00000000L)
-#endif //!STATUS_SUCCESS
-#ifndef STATUS_UNSUCCESSFUL
-#define STATUS_UNSUCCESSFUL            ((NTSTATUS)0xC0000001L)
-#endif //!STATUS_UNSUCCESSFUL
-#ifndef STATUS_NOT_IMPLEMENTED
-#define STATUS_NOT_IMPLEMENTED         ((NTSTATUS)0xC0000002L)
-#endif //!STATUS_NOT_IMPLEMENTED
-#ifndef STATUS_INFO_LENGTH_MISMATCH
-#define STATUS_INFO_LENGTH_MISMATCH    ((NTSTATUS)0xC0000004L)
-#endif //!STATUS_INFO_LENGTH_MISMATCH
-#ifndef STATUS_NO_MEMORY
-#define STATUS_NO_MEMORY               ((NTSTATUS)0xC0000017L)
-#endif //!STATUS_NO_MEMORY
-#ifndef STATUS_ACCESS_DENIED
-#define STATUS_ACCESS_DENIED           ((NTSTATUS)0xC0000022L)
-#endif //!STATUS_ACCESS_DENIED
-#ifndef STATUS_BUFFER_TOO_SMALL
-#define STATUS_BUFFER_TOO_SMALL        ((NTSTATUS)0xC0000023L)
-#endif //!STATUS_BUFFER_TOO_SMALL
-#ifndef STATUS_PROCEDURE_NOT_FOUND
-#define STATUS_PROCEDURE_NOT_FOUND     ((NTSTATUS)0xC000007AL)
-#endif //!STATUS_PROCEDURE_NOT_FOUND
-#ifndef STATUS_NOT_SUPPORTED
-#define STATUS_NOT_SUPPORTED           ((NTSTATUS)0xC00000BBL)
-#endif //!STATUS_NOT_SUPPORTED
-#ifndef STATUS_NOT_FOUND
-#define STATUS_NOT_FOUND               ((NTSTATUS)0xC0000225L)
-#endif //!STATUS_NOT_FOUND
-#ifndef STATUS_PARTIAL_COPY
-#define STATUS_PARTIAL_COPY            ((NTSTATUS)0x8000000DL)
-#endif //!STATUS_PARTIAL_COPY
-
-//__inline _TEB* GetTEB(void)
-//{
-//	// 64 bit -> _TEB* pTeb = NtCurrentTeb();
-//	_TEB* pTeb = NULL;
-//	_asm
-//	{
-//		mov eax, fs:[0x18]
-//			mov pTeb, eax
-//	}
-//	return pTeb;
-//}
 
 #endif

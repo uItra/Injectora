@@ -234,7 +234,6 @@ HRESULT Injector::ManualMap(String filePath)
 		return 3;
 	}
 
-	printf("Manual Mapping.....\n");
 	HMODULE ret = remoteLoader.LoadLibraryByPathIntoMemoryA(filePath.toStdString().c_str(), false);
 	if (!ret)
 	{
@@ -297,9 +296,7 @@ BOOL Injector::LoadLibraryInject(String filePath)
 		return 3;
 	}
 
-	int		bRet = FALSE;
-	
-	printf("LoadLibrary injection.....\n");
+	int	bRet = FALSE;
 
 	HMODULE returnedModule = remoteLoader.LoadLibraryByPathA(filePath.getCharPointer());
 	if (returnedModule)

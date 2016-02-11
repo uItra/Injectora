@@ -247,17 +247,33 @@ namespace Utils
 		return address;
 	}
 
-	static HANDLE NtCreateThreadEx(HANDLE hProcess, LPVOID lpRemoteThreadStart, LPVOID lpParam)
+	static HANDLE NtCreateThreadEx(HANDLE hProcess, LPVOID lpRemoteThreadStart, LPVOID lpParam, DWORD* threadId)
 	{
-		NTCREATETHREADEX fnNtCreateThreadEx = (NTCREATETHREADEX)Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "NtCreateThreadEx");
-		if (fnNtCreateThreadEx == NULL)
+		tNtCreateThreadEx NtCreateThreadEx = (tNtCreateThreadEx)Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "NtCreateThreadEx");
+		if (NtCreateThreadEx == NULL)
 			return NULL;
+
+		PS_ATTRIBUTE_LIST attrList;
+		ZeroMemory(&attrList, sizeof(PS_ATTRIBUTE_LIST));
+		CLIENT_ID cid;
+		ZeroMemory(&cid, sizeof(CLIENT_ID));
+		OBJECT_ATTRIBUTES64 thrdAttr;
+		InitializeObjectAttributes64(&thrdAttr, NULL, 0, NULL, NULL);
+
+		attrList.Attributes[0].Attribute = ProcThreadAttributeValue(PsAttributeClientId, TRUE, FALSE, FALSE);
+		attrList.Attributes[0].Size = sizeof(CLIENT_ID);
+		attrList.Attributes[0].ValuePtr = (ULONG_PTR*)&cid;
+
+		attrList.TotalLength = sizeof(PS_ATTRIBUTE_LIST);
 
 		HANDLE hRemoteThread = NULL;
 		HRESULT hRes = 0;
 
-		if (!NT_SUCCESS(fnNtCreateThreadEx(&hRemoteThread, THREAD_ALL_ACCESS, NULL, hProcess, lpRemoteThreadStart, lpParam, 0, 0, 0x1000, 0x100000, NULL)))
+		if (!NT_SUCCESS(NtCreateThreadEx(&hRemoteThread, THREAD_ALL_ACCESS, NULL, hProcess, lpRemoteThreadStart, lpParam, 0, 0, 0x1000, 0x100000, &attrList)))
 			return NULL;
+
+		if (threadId)
+			*threadId = (DWORD)cid.UniqueThread;
 
 		return hRemoteThread;
 	}
