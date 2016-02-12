@@ -15,7 +15,7 @@ void CRemoteCode::PushParameter(parameter_type_t param_type, void *param)
 	pi.pparam = param;
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("Adding parameter to function [%i][0x%llp]", pi.ptype, pi.pparam);
+	DebugShout("Adding parameter to function [%i][0x%IX]", pi.ptype, pi.pparam);
 	#endif
 
 	m_CurrentInvokeInfo.params.push_back(pi);
@@ -251,7 +251,7 @@ bool CRemoteCode::LoadParam64(unsigned __int64 pparam, parameter_index_t paramin
 void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 {
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("PushCall [%s][0x%llp]", CallingConventionToString(cconv).c_str(), CallAddress);
+	DebugShout("PushCall [%s][0x%IX]", CallingConventionToString(cconv).c_str(), CallAddress);
 	#endif
 
 	int iFunctionBegin = (int)m_CurrentInvokeInfo.params.size();
@@ -505,7 +505,7 @@ bool CRemoteCode::ExecuteRemoteThreadBuffer(remote_thread_buffer_t thread_data, 
 		return false;
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("RemoteBuffer: 0x%llp\n", RemoteBuffer);
+	DebugShout("RemoteBuffer: 0x%IX\n", RemoteBuffer);
 	#endif
 
 	HANDLE hThreadHandle = CreateRemoteThreadInProcess((LPTHREAD_START_ROUTINE)RemoteBuffer, NULL); 
@@ -624,7 +624,7 @@ void CRemoteCode::EndCall64()
 void CRemoteCode::AddByteToBuffer(unsigned char in)
 {
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("Byte added to buffer: 0x%X", in);
+	DebugShout("Byte added to buffer: 0x%.2X", in);
 	#endif
 	m_CurrentRemoteThreadBuffer.push_back(in);
 }
@@ -1054,7 +1054,7 @@ bool CRemoteCode::CreateAPCEvent( DWORD threadID )
         size_t len             =  sizeof(pEventName);
 
         // Generate event name
-        swprintf_s(pEventName, ARRAYSIZE(pEventName), L"_INJEvent_0x%x_0x%x", threadID, GetTickCount());
+        swprintf_s(pEventName, ARRAYSIZE(pEventName), L"_INJEvent_0x%X_0x%X", threadID, GetTickCount());
 
 		BeginCall64();
 
@@ -1173,11 +1173,12 @@ void CRemoteCode::RemoteFreeMemory(void *address, SIZE_T size)
 
 string CRemoteCode::CallingConventionToString(calling_convention_t cconv)
 {
-	static const char *szCconvTypes[4] = {
+	static const char *szCconvTypes[] = {
 		"CCONV_CDECL",
 		"CCONV_STDCALL",
 		"CCONV_THISCALL",
-		"CCONV_FASTCALL"
+		"CCONV_FASTCALL",
+		"CCONV_WIN64"
 	};
 	return szCconvTypes[cconv];
 }

@@ -68,7 +68,7 @@ HMODULE CRemoteLoader::LoadDependencyW(LPCWCH Path)
 	}
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[LoadDependencyW] LdrLoadDll = 0x%llp", RemoteLdrLoadDll);
+	DebugShout("[LoadDependencyW] LdrLoadDll = 0x%IX", RemoteLdrLoadDll);
 	#endif
 
 	// Make new unicode string object
@@ -189,7 +189,7 @@ HMODULE CRemoteLoader::LoadLibraryByPathW(LPCWCH Path, ULONG Flags/*= NULL*/)
 	}
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[LoadLibraryByPathW] LdrLoadDll = 0x%llp", RemoteLdrLoadDll);
+	DebugShout("[LoadLibraryByPathW] LdrLoadDll = 0x%IX", RemoteLdrLoadDll);
 	#endif
 
 	// Make new unicode string object
@@ -323,7 +323,7 @@ HMODULE CRemoteLoader::LoadLibraryByPathIntoMemoryW(LPCWCH Path, BOOL PEHeader)
 	wcstombs_s(&charsConverted, PathAnsi, Path, MAX_PATH);
 	
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[LoadLibraryByPathIntoMemoryW]( %S -> %s )( 0x%llp )", Path, PathAnsi, PEHeader);
+	DebugShout("[LoadLibraryByPathIntoMemoryW]( %S -> %s )( 0x%I64d )", Path, PathAnsi, PEHeader);
 	#endif
 
 	return LoadLibraryByPathIntoMemoryA(PathAnsi, PEHeader);
@@ -331,18 +331,23 @@ HMODULE CRemoteLoader::LoadLibraryByPathIntoMemoryW(LPCWCH Path, BOOL PEHeader)
 
 HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModule, BOOL PEHeader)
 {
-	
-	DWORD err = CreateRPCEnvironment();
-	if (err != ERROR_SUCCESS)
+	//
+	// Create Remote Procedure Call environment. No need for this in 32 bit
+	//
+	if ( m_bIs64bit)
 	{
-		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[LoadLibraryFromMemory] CreateRPCEnvironment failed. Error 0x%X", err);
-		#endif
-		return NULL;
+		DWORD err = CreateRPCEnvironment();
+		if (err != ERROR_SUCCESS)
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[LoadLibraryFromMemory] CreateRPCEnvironment failed. Error 0x%X", err);
+			#endif
+			return NULL;
+		}
 	}
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[LoadLibraryFromMemory] BaseAddress (0x%llp) - SizeOfModule (0x%llp)", BaseAddress, SizeOfModule);
+	DebugShout("[LoadLibraryFromMemory] BaseAddress (0x%IX) - SizeOfModule (0x%X)", BaseAddress, SizeOfModule);
 	#endif
 
 	IMAGE_NT_HEADERS* ImageNtHeaders = ToNts(BaseAddress);
@@ -385,8 +390,7 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 	size_t ImageSize = rva_high - rva_low;
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[LoadLibraryFromMemory] Calculated size (0x%llp)", ImageSize);
-	DebugShout("[LoadLibraryFromMemory] SizeOfImage (0x%llp)", ImageNtHeaders->OptionalHeader.SizeOfImage);
+	DebugShout("[LoadLibraryFromMemory] Calculated size (0x%IX)", ImageSize);
 	#endif
 
 	if ((ImageNtHeaders->OptionalHeader.ImageBase % 4096) != 0)
@@ -421,7 +425,7 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 	}
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[LoadLibraryFromMemory] Allocated remote module at [0x%llp]!", AllocatedRemoteMemory);
+	DebugShout("[LoadLibraryFromMemory] Allocated remote module at [0x%IX]!", AllocatedRemoteMemory);
 	DebugShout("[LoadLibraryFromMemory] Processing Import Tables....\n");
 	#endif
 
@@ -490,7 +494,7 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 		FARPROC DllEntryPoint = MakePtr(FARPROC, AllocatedRemoteMemory, ImageNtHeaders->OptionalHeader.AddressOfEntryPoint);
 		
 		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[LoadModuleFromMemory] DllEntrypoint = 0x%llp", DllEntryPoint);
+		DebugShout("[LoadModuleFromMemory] DllEntrypoint = 0x%IX", DllEntryPoint);
 		#endif
 
 		if (CallEntryPoint(AllocatedRemoteMemory, DllEntryPoint) == false)
@@ -502,7 +506,7 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 		else
 		{
 			#ifdef DEBUG_MESSAGES_ENABLED
-			DebugShout("[LoadModuleFromMemory] Executed the remote thread buffer successfully [0x%llp]", DllEntryPoint);
+			DebugShout("[LoadModuleFromMemory] Executed the remote thread buffer successfully [0x%IX]", DllEntryPoint);
 			#endif
 		}
 	}	
@@ -515,7 +519,7 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 	
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[LoadModuleFromMemory] Returning Pointer (0x%llp)", AllocatedRemoteMemory);
+	DebugShout("[LoadModuleFromMemory] Returning Pointer (0x%IX)", AllocatedRemoteMemory);
 	#endif
 
 	return (HMODULE)AllocatedRemoteMemory;
@@ -689,7 +693,7 @@ BOOL CRemoteLoader::CallEntryPoint(void* BaseAddress, FARPROC Entrypoint)
 	}
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("\nCallEntryPoint [0x%llp]:", Entrypoint);
+	DebugShout("\nCallEntryPoint [0x%IX]:", Entrypoint);
 	#endif 
 
 	return ExecuteRemoteThreadBuffer(m_CurrentRemoteThreadBuffer, true);
@@ -791,7 +795,7 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 						}
 
 						#ifdef DEBUG_MESSAGES_ENABLED
-						DebugShout("[ProcessImportTable] Processed (%s -> %i) -> (0x%llp)", ModuleName, Ordinal, FunctionAddress);
+						DebugShout("[ProcessImportTable] Processed (%s -> %i) -> (0x%IX)", ModuleName, Ordinal, FunctionAddress);
 						#endif
 					}
 					else
@@ -802,7 +806,7 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 						FunctionAddress = (FARPROC)GetRemoteProcAddressA(ModuleName, NameOfImport); // Utils::GetProcAddress
 
 						#ifdef DEBUG_MESSAGES_ENABLED
-						DebugShout("[ProcessImportTable] Processed (%s -> %s) -> (0x%llp)", ModuleName, NameOfImport, FunctionAddress);
+						DebugShout("[ProcessImportTable] Processed (%s -> %s) -> (0x%IX)", ModuleName, NameOfImport, FunctionAddress);
 						#endif
 					}
 
@@ -913,7 +917,7 @@ BOOL CRemoteLoader::ProcessDelayedImportTable(PVOID BaseAddress, PVOID RemoteAdd
 						}
 						
 						#ifdef DEBUG_MESSAGES_ENABLED
-						DebugShout("[ProcessDelayedImportTable] Processed (%s -> %i) -> (0x%llp)", ModuleName, Ordinal, FunctionAddress);
+						DebugShout("[ProcessDelayedImportTable] Processed (%s -> %i) -> (0x%IX)", ModuleName, Ordinal, FunctionAddress);
 						#endif
 					}
 					else
@@ -932,7 +936,7 @@ BOOL CRemoteLoader::ProcessDelayedImportTable(PVOID BaseAddress, PVOID RemoteAdd
 						}
 
 						#ifdef DEBUG_MESSAGES_ENABLED
-						DebugShout("[ProcessDelayedImportTable] Processed (%s -> %s) -> (0x%llp)", ModuleName, (PCHAR)ImageImportByName->Name, FunctionAddress);
+						DebugShout("[ProcessDelayedImportTable] Processed (%s -> %s) -> (0x%IX)", ModuleName, (PCHAR)ImageImportByName->Name, FunctionAddress);
 						#endif
 					}
 
@@ -1132,7 +1136,7 @@ BOOL CRemoteLoader::ProcessRelocation(ULONG ImageBaseDelta, WORD Data, PBYTE Rel
 		*Raw += HIWORD(ImageBaseDelta);
 
 		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_HIGH (0x%llp) -> (0x%llp)", Backup, *Raw);
+		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_HIGH (0x%IX) -> (0x%IX)", Backup, *Raw);
 		#endif
 
 		break;
@@ -1145,7 +1149,7 @@ BOOL CRemoteLoader::ProcessRelocation(ULONG ImageBaseDelta, WORD Data, PBYTE Rel
 		*Raw += LOWORD(ImageBaseDelta);
 
 		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_LOW (0x%llp) -> (0x%llp)", Backup, *Raw);
+		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_LOW (0x%IX) -> (0x%X)", Backup, *Raw);
 		#endif
 
 		break;
@@ -1158,7 +1162,7 @@ BOOL CRemoteLoader::ProcessRelocation(ULONG ImageBaseDelta, WORD Data, PBYTE Rel
 		*Raw += ImageBaseDelta;
 
 		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_HIGHLOW (0x%llp) -> (0x%llp)", Backup, *Raw);
+		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_HIGHLOW (0x%IX) -> (0x%X)", Backup, *Raw);
 		#endif
 
 		break;
@@ -1171,7 +1175,7 @@ BOOL CRemoteLoader::ProcessRelocation(ULONG ImageBaseDelta, WORD Data, PBYTE Rel
 		*Raw += ImageBaseDelta;
 
 		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_DIR64 (0x%llp) -> (0x%llp)", Backup, *Raw);
+		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_DIR64 (0x%IX) -> (0x%IX)", Backup, *Raw);
 		#endif
 
 		break;
@@ -1193,7 +1197,7 @@ BOOL CRemoteLoader::ProcessRelocation(ULONG ImageBaseDelta, WORD Data, PBYTE Rel
 	default:
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[ProcessRelocation] UNKNOWN RELOCATION (0x%llp)", IMR_RELTYPE(Data));
+		DebugShout("[ProcessRelocation] UNKNOWN RELOCATION (0x%IX)", IMR_RELTYPE(Data));
 		#endif
 
 		bReturn = FALSE;
@@ -1224,13 +1228,13 @@ BOOL CRemoteLoader::ProcessRelocations(PVOID BaseAddress, PVOID RemoteAddress)
 		DWORD ImageBaseDelta = MakeDelta(DWORD, RemoteAddress, ImageNtHeaders->OptionalHeader.ImageBase);
 
 		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[ProcessRelocations] VirtualAddress (0x%llp)",ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
+		DebugShout("[ProcessRelocations] VirtualAddress (0x%IX)",ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
 		#endif
 
 		DWORD RelocationSize = ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size;
 
 		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[ProcessRelocations] Relocation Size [0x%llp]", RelocationSize);
+		DebugShout("[ProcessRelocations] Relocation Size [0x%IX]", RelocationSize);
 		#endif
 
 		if (RelocationSize)
@@ -1239,7 +1243,7 @@ BOOL CRemoteLoader::ProcessRelocations(PVOID BaseAddress, PVOID RemoteAddress)
 			if (RelocationDirectory)
 			{
 				#ifdef DEBUG_MESSAGES_ENABLED
-				DebugShout("[ProcessRelocations] RelocationDirectory (0x%llp)", RelocationDirectory);
+				DebugShout("[ProcessRelocations] RelocationDirectory (0x%IX)", RelocationDirectory);
 				#endif
 
 				PVOID RelocationEnd = reinterpret_cast<PBYTE>(RelocationDirectory) + RelocationSize;
@@ -1253,8 +1257,8 @@ BOOL CRemoteLoader::ProcessRelocations(PVOID BaseAddress, PVOID RemoteAddress)
 					PWORD RelocationData = reinterpret_cast<PWORD>(RelocationDirectory + 1);
 
 					#ifdef DEBUG_MESSAGES_ENABLED
-					DebugShout("[ProcessRelocations] RelocationDirectory (0x%llp)", RelocationDirectory);
-					DebugShout("[ProcessRelocations] RelocationData (0x%llp)", RelocationData);
+					DebugShout("[ProcessRelocations] RelocationDirectory (0x%IX)", RelocationDirectory);
+					DebugShout("[ProcessRelocations] RelocationData (0x%IX)", RelocationData);
 					#endif
 
 					for (DWORD i = 0; i < NumRelocs; ++i, ++RelocationData)
@@ -1328,7 +1332,7 @@ ULONG CRemoteLoader::GetSectionProtection(ULONG Characteristics)
 BOOL CRemoteLoader::ProcessSection(BYTE* Name, PVOID BaseAddress, PVOID RemoteAddress, ULONGLONG RawData, ULONGLONG VirtualAddress, ULONGLONG RawSize, ULONGLONG VirtualSize, ULONG ProtectFlag)
 {
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[ProcessSection] ProcessSection( %s, 0x%llp, 0x%llp, 0x%llp, 0x%llp, 0x%llp, 0x%llp, 0x%llp )", Name, BaseAddress, RemoteAddress, RawData, VirtualAddress, RawSize, VirtualSize, ProtectFlag);
+	DebugShout("[ProcessSection] ProcessSection( %s, 0x%IX, 0x%IX, 0x%IX, 0x%IX, 0x%IX, 0x%IX, 0x%IX )", Name, BaseAddress, RemoteAddress, RawData, VirtualAddress, RawSize, VirtualSize, ProtectFlag);
 	#endif
 
 	if (WriteProcessMemory(m_hProcess, MakePtr(PVOID, RemoteAddress, VirtualAddress), MakePtr(PVOID, BaseAddress, RawData), (SIZE_T)RawSize, NULL) == FALSE)
@@ -1432,14 +1436,14 @@ BOOL CRemoteLoader::ProcessTlsEntries(PVOID BaseAddress, PVOID RemoteAddress)
 		return TRUE; // Success when there is no Tls entries / broken data?
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[ProcessTlsEntries] TlsDirectory (0x%llp)", TlsDirectory);
+	DebugShout("[ProcessTlsEntries] TlsDirectory (0x%IX)", TlsDirectory);
 	#endif
 
 	if (TlsDirectory->AddressOfCallBacks == NULL)
 		return TRUE; // Success when there is no Tls entries / broken data?
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[ProcessTlsEntries] TlsDirectory->AddressOfCallBacks (0x%llp)", TlsDirectory->AddressOfCallBacks);
+	DebugShout("[ProcessTlsEntries] TlsDirectory->AddressOfCallBacks (0x%IX)", TlsDirectory->AddressOfCallBacks);
 	#endif
 
 	PIMAGE_TLS_CALLBACK TLSCallbacks[0xFF];
@@ -1456,7 +1460,7 @@ BOOL CRemoteLoader::ProcessTlsEntries(PVOID BaseAddress, PVOID RemoteAddress)
 	for (int i = 0; TLSCallbacks[i]; i++)
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[ProcessTlsEntries] TLSCallbacks[%i] = 0x%llp (0x%llp)", i, TLSCallbacks[i], RemoteAddress);
+		DebugShout("[ProcessTlsEntries] TLSCallbacks[%i] = 0x%IX (0x%IX)", i, TLSCallbacks[i], RemoteAddress);
 		#endif
 
 		// As a consequence of the relocation stuff mentioned above, pCallbacks[i] is already fixed
@@ -1464,10 +1468,12 @@ BOOL CRemoteLoader::ProcessTlsEntries(PVOID BaseAddress, PVOID RemoteAddress)
 		{
 			#ifdef DEBUG_MESSAGES_ENABLED
 			DebugShout("[ProcessTlsEntries] Failed to execute Tls Entry [%i]", i);
+			#endif
 		}
 		else
 		{
-			DebugShout("[ProcessTlsEntries] Called Tls Callback (0x%llp)", TLSCallbacks[i]);
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[ProcessTlsEntries] Called Tls Callback (0x%IX)", TLSCallbacks[i]);
 			#endif
 		}
 	}
@@ -1511,7 +1517,7 @@ ModuleFile CRemoteLoader::InitModuleFile(LPCCH FileName)
 	}
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[InitModuleFile] Size [0x%llp]", r.Size);
+	DebugShout("[InitModuleFile] Size [0x%IX]", r.Size);
 	#endif
 
 	if (r.Size == 0)
@@ -1549,14 +1555,14 @@ ModuleFile CRemoteLoader::InitModuleFile(LPCCH FileName)
 	else
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[InitModuleFile] Read file complete [0x%llp]", NumberOfBytesRead);
+		DebugShout("[InitModuleFile] Read file complete [0x%IX]", NumberOfBytesRead);
 		#endif
 
 		r.Buffer = AllocatedFile;
 	}
 
 	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[InitModuleFile] Buffer [0x%llp]", r.Buffer);
+	DebugShout("[InitModuleFile] Buffer [0x%IX]", r.Buffer);
 	#endif
 	
 	CloseHandle(hFile);
