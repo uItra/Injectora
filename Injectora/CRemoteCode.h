@@ -108,6 +108,9 @@ public:
 
 	remote_thread_buffer_t	GetRemoteThreadBuffer();
 
+	DWORD					ExecuteInWorkerThread(remote_thread_buffer_t buffer, size_t& callResult);
+	DWORD					TerminateWorkerThread();
+
 	bool					ExecuteRemoteThreadBuffer(remote_thread_buffer_t thread_data, bool async = true);
 	void					DestroyRemoteThreadBuffer();
 
@@ -141,12 +144,9 @@ protected:
 	DWORD					CreateRPCEnvironment(bool noThread = false);
 	bool					CreateAPCEvent(DWORD threadID);
 	DWORD					CreateWorkerThread();
-	DWORD					TerminateWorkerThread();
 
 	void					ExitThreadWithStatus();
 	void					SaveRetValAndSignalEvent();
-
-	DWORD					ExecInWorkerThread(remote_thread_buffer_t buffer, size_t& callResult);
 
 	bool					CreateActx(LPCCH Path, int id = 2);
 	

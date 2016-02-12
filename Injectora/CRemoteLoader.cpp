@@ -767,7 +767,7 @@ BOOL CRemoteLoader::CallEntryPoint(void* BaseAddress, FARPROC Entrypoint)
 		EndCall64();
 
 		size_t result;
-		if (ExecInWorkerThread(m_CurrentRemoteThreadBuffer, result) != ERROR_SUCCESS)
+		if (ExecuteInWorkerThread(m_CurrentRemoteThreadBuffer, result) != ERROR_SUCCESS)
 		{
 			TerminateWorkerThread();
 			DestroyRemoteThreadBuffer();
@@ -1150,7 +1150,7 @@ FARPROC CRemoteLoader::GetRemoteProcAddressA(LPCCH Module, LPCCH procName)
 	if (m_bIs64bit)
 	{
 		size_t result;
-		if (ExecInWorkerThread(m_CurrentRemoteThreadBuffer, result) != ERROR_SUCCESS)
+		if (ExecuteInWorkerThread(m_CurrentRemoteThreadBuffer, result) != ERROR_SUCCESS)
 		{
 			RemoteFreeMemory(ReturnPointerValue, sizeof(size_t));
 			return NULL;

@@ -1209,7 +1209,7 @@ bool CRemoteCode::CreateActx(LPCCH Path, int id /*= 2*/)
 	if (WriteProcessMemory(m_hProcess, (BYTE*)m_pAContext + sizeof(HANDLE), &act, sizeof(act), NULL) &&
 		WriteProcessMemory(m_hProcess, (BYTE*)m_pAContext + sizeof(HANDLE) + sizeof(act), (void*)Path, (strlen(Path) + 1) * sizeof(TCHAR), NULL))
 	{
-		if (ExecInWorkerThread(m_CurrentRemoteThreadBuffer, result) != ERROR_SUCCESS || (HANDLE)result == INVALID_HANDLE_VALUE)
+		if (ExecuteInWorkerThread(m_CurrentRemoteThreadBuffer, result) != ERROR_SUCCESS || (HANDLE)result == INVALID_HANDLE_VALUE)
 		{
 			if (m_pAContext)
 			{
@@ -1230,7 +1230,7 @@ bool CRemoteCode::CreateActx(LPCCH Path, int id /*= 2*/)
 	return true;
 }
 
-DWORD CRemoteCode::ExecInWorkerThread(remote_thread_buffer_t thread_data, size_t& callResult)
+DWORD CRemoteCode::ExecuteInWorkerThread(remote_thread_buffer_t thread_data, size_t& callResult)
 {
 	DWORD dwResult = ERROR_SUCCESS;
 
@@ -1273,7 +1273,7 @@ DWORD CRemoteCode::ExecInWorkerThread(remote_thread_buffer_t thread_data, size_t
 	}
 
 	// Ensure APC function fully returns
-	Sleep(1);
+	Sleep(10);
 
 	// Free remote memory. Don't wanna forget lel
 	RemoteFreeMemory(RemoteBuffer, thread_data.size());
