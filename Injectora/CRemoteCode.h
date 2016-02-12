@@ -149,9 +149,6 @@ protected:
 	void					SaveRetValAndSignalEvent();
 
 	bool					CreateActx(LPCCH Path, int id = 2);
-	
-	
-
 
 protected:
 	HANDLE					m_hProcess;

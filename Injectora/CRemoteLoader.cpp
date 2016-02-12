@@ -326,7 +326,6 @@ HMODULE CRemoteLoader::LoadLibraryByPathIntoMemoryA(LPCCH Path, BOOL PEHeader)
 		}
 	}
 
-
 	hReturnValue = LoadLibraryFromMemory(File.Buffer, File.Size, PEHeader);
 	if (FreeModuleFile(File) == FALSE)
 	{
