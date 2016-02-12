@@ -18,28 +18,6 @@ void CRemoteLoader::SetProcess(HANDLE hProcess)
 	m_bIs64bit = GetProcessPlatform() == 2 ? true : false;
 }
 
-DWORD CRemoteLoader::CreateRPCEnvironment(bool noThread /*= false*/)
-{
-	DWORD dwResult = ERROR_SUCCESS;
-	DWORD thdID = 1337;
-	bool status = true;
-
-	// Allocate environment codecave
-	if (m_pWorkerCode == nullptr)
-		m_pWorkerCode = RemoteAllocateMemory(0x1000);
-
-	// Create RPC thread
-	if (noThread == false)
-		thdID = CreateWorkerThread();
-
-	// Create synchronization event
-	status = CreateAPCEvent(thdID);
-	if (thdID == 0 || status == false)
-		dwResult = GetLastError();
-
-	return dwResult;
-}
-
 HMODULE CRemoteLoader::LoadDependencyA(LPCCH Path)
 {
 	WCHAR Module[MAX_PATH] = { 0 };
@@ -303,6 +281,52 @@ HMODULE CRemoteLoader::LoadLibraryByPathIntoMemoryA(LPCCH Path, BOOL PEHeader)
 		return NULL;
 	}
 
+	//
+	// Create Remote Procedure Call environment. No need for this in 32 bit
+	//
+	if ( m_bIs64bit)
+	{
+		// Obtain activation context for the module we're injecting
+		ACTCTX act = { 0 };
+		act.cbSize = sizeof(act);
+		act.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID;
+		act.lpSource = Path;
+		act.lpResourceName = MAKEINTRESOURCEA(2);
+		m_hActx = CreateActCtx(&act);
+		if (m_hActx == INVALID_HANDLE_VALUE)
+		{
+			act.lpResourceName = MAKEINTRESOURCEA(1);
+			m_hActx = CreateActCtx(&act);
+		}
+		// // // // 
+
+		DWORD err = CreateRPCEnvironment();
+		if (err != ERROR_SUCCESS)
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[LoadLibraryFromMemory] CreateRPCEnvironment failed. Error 0x%X", err);
+			#endif
+			return NULL;
+		}
+
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[LoadLibraryFromMemory] Creating Activation Context!");
+		#endif
+		if (!CreateActx(Path, 2))
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[LoadLibraryFromMemory] Failed to create Activation Context under Resource ID 2. Trying ID 1...");
+			#endif
+			if (!CreateActx(Path, 1))
+			{
+				#ifdef DEBUG_MESSAGES_ENABLED
+				DebugShout("[LoadLibraryFromMemory] Failed to create Activation Context under from manifest under Resource ID 1 and 2!");
+				#endif
+			}
+		}
+	}
+
+
 	hReturnValue = LoadLibraryFromMemory(File.Buffer, File.Size, PEHeader);
 	if (FreeModuleFile(File) == FALSE)
 	{
@@ -317,35 +341,14 @@ HMODULE CRemoteLoader::LoadLibraryByPathIntoMemoryA(LPCCH Path, BOOL PEHeader)
 HMODULE CRemoteLoader::LoadLibraryByPathIntoMemoryW(LPCWCH Path, BOOL PEHeader)
 {
 	CHAR PathAnsi[MAX_PATH] = { 0 };
-
 	size_t charsConverted;
-
 	wcstombs_s(&charsConverted, PathAnsi, Path, MAX_PATH);
-	
-	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("[LoadLibraryByPathIntoMemoryW]( %S -> %s )( 0x%I64d )", Path, PathAnsi, PEHeader);
-	#endif
 
 	return LoadLibraryByPathIntoMemoryA(PathAnsi, PEHeader);
 }
 
 HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModule, BOOL PEHeader)
 {
-	//
-	// Create Remote Procedure Call environment. No need for this in 32 bit
-	//
-	if ( m_bIs64bit)
-	{
-		DWORD err = CreateRPCEnvironment();
-		if (err != ERROR_SUCCESS)
-		{
-			#ifdef DEBUG_MESSAGES_ENABLED
-			DebugShout("[LoadLibraryFromMemory] CreateRPCEnvironment failed. Error 0x%X", err);
-			#endif
-			return NULL;
-		}
-	}
-
 	#ifdef DEBUG_MESSAGES_ENABLED
 	DebugShout("[LoadLibraryFromMemory] BaseAddress (0x%IX) - SizeOfModule (0x%X)", BaseAddress, SizeOfModule);
 	#endif
@@ -666,15 +669,112 @@ BOOL CRemoteLoader::CallEntryPoint(void* BaseAddress, FARPROC Entrypoint)
 {
 	if (m_bIs64bit)
 	{
-		// Backup RCX, RDX, R8, and R9 on stack
-		BeginCall64();
+		// ActivateActCtx 
+		if (m_pAContext)
+		{
+			size_t rsp_dif =  0x28;
+			rsp_dif = Utils::Align(rsp_dif, 0x10);
+			// sub  rsp, (rsp_dif + 8)
+			AddByteToBuffer(0x48);
+			AddByteToBuffer(0x83);
+			AddByteToBuffer(0xEC);
+			AddByteToBuffer((unsigned char)(rsp_dif + 8));
+			// >>>
+			// >>>
+			// mov  rax, m_pAContext
+			AddByteToBuffer(0x48); 
+			AddByteToBuffer(0xB8);
+			AddLong64ToBuffer((size_t)m_pAContext);
+			// mov  rax, [rax]
+			AddByteToBuffer(0x48);
+			AddByteToBuffer(0x8B); 
+			AddByteToBuffer(0x00);
+			// mov  rcx, rax -> first parameter
+			AddByteToBuffer(0x48);
+			AddByteToBuffer(0x89);
+			AddByteToBuffer(0xC1);
+			// mov  rdx, (m_pAContext + sizeof(HANDLE)) -> second parameter
+			LoadParam64((size_t)m_pAContext + sizeof(HANDLE), PARAM_INDEX_RDX);	
+			// mov  r13, calladdress
+			AddByteToBuffer(0x49);
+			AddByteToBuffer(0xBD);
+			AddLong64ToBuffer((size_t)ActivateActCtx);
+			// call r13
+			AddByteToBuffer(0x41);
+			AddByteToBuffer(0xFF);
+			AddByteToBuffer(0xD5);
+			// >>>
+			// >>>
+			// add rsp, (rsp_dif + 8)
+			AddByteToBuffer(0x48);
+			AddByteToBuffer(0x83);
+			AddByteToBuffer(0xC4);
+			AddByteToBuffer((unsigned char)(rsp_dif + 8));
+		}
 
+		/* Call the actual entry point */
 		PushInt64((unsigned __int64)BaseAddress);
 		PushInt64(DLL_PROCESS_ATTACH);
 		PushInt64(0x00);
-		PushCall(CCONV_FASTCALL, Entrypoint);
+		PushCall(CCONV_WIN64, Entrypoint);
+
+		// DeactivateActCtx
+		if (m_pAContext)
+		{
+			size_t rsp_dif = 0x28;
+			rsp_dif = Utils::Align(rsp_dif, 0x10);
+			// sub  rsp, (rsp_dif + 8)
+			AddByteToBuffer(0x48);
+			AddByteToBuffer(0x83);
+			AddByteToBuffer(0xEC);
+			AddByteToBuffer((unsigned char)(rsp_dif + 8));
+			// >>>
+			// >>>
+			// mov  rax, m_pAContext + sizeof(HANDLE)
+			AddByteToBuffer(0x48);
+			AddByteToBuffer(0xB8);
+			AddLong64ToBuffer((size_t)m_pAContext + sizeof(HANDLE));
+			// mov  rax, [rax]
+			AddByteToBuffer(0x48);
+			AddByteToBuffer(0x8B);
+			AddByteToBuffer(0x00);
+			// mov  rcx, 0 -> first parameter
+			LoadParam64(0, PARAM_INDEX_RCX);
+			// mov  rdx, rax
+			AddByteToBuffer(0x48);
+			AddByteToBuffer(0x89);
+			AddByteToBuffer(0xC2);
+			// mov  r13, calladdress
+			AddByteToBuffer(0x49);
+			AddByteToBuffer(0xBD);
+			AddLong64ToBuffer((size_t)DeactivateActCtx);
+			// call r13
+			AddByteToBuffer(0x41);
+			AddByteToBuffer(0xFF);
+			AddByteToBuffer(0xD5);
+			// >>>
+			// >>>
+			// add rsp, (rsp_dif + 8)
+			AddByteToBuffer(0x48);
+			AddByteToBuffer(0x83);
+			AddByteToBuffer(0xC4);
+			AddByteToBuffer((unsigned char)(rsp_dif + 8));		
+		}
+
+		// Signal wait event
+		SaveRetValAndSignalEvent();
 		// Restore registers from stack and return
 		EndCall64();
+
+		size_t result;
+		if (ExecInWorkerThread(m_CurrentRemoteThreadBuffer, result) != ERROR_SUCCESS)
+		{
+			TerminateWorkerThread();
+			DestroyRemoteThreadBuffer();
+			return FALSE;
+		}
+
+		return TRUE;
 	}
 	else
 	{
@@ -728,7 +828,13 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 				HMODULE ModuleBase = GetRemoteModuleHandleA(ModuleName);
 				if (ModuleBase == NULL) 
 				{
-					ModuleBase = LoadDependencyA(ModuleName);
+					std::string strDll = ModuleName;
+					std::wstring strBaseDll = L"";
+
+					strBaseDll.assign(strDll.begin(), strDll.end());
+					ResolvePath(strBaseDll, EnsureFullPath);
+
+					ModuleBase = LoadDependencyW(strBaseDll.c_str());
 					if (ModuleBase == NULL)
 					{
 						#ifdef DEBUG_MESSAGES_ENABLED
@@ -1016,6 +1122,8 @@ FARPROC CRemoteLoader::GetRemoteProcAddressA(LPCCH Module, LPCCH procName)
 		AddByteToBuffer(0xA3);
 		AddLong64ToBuffer((unsigned __int64)ReturnPointerValue);
 
+		SaveRetValAndSignalEvent();
+
 		// Restore RCX, RDX, R8, and R9 from stack and return
 		EndCall64();
 	}
@@ -1039,10 +1147,22 @@ FARPROC CRemoteLoader::GetRemoteProcAddressA(LPCCH Module, LPCCH procName)
 		AddByteToBuffer(0x00);
 	}
 
-	if (!ExecuteRemoteThreadBuffer(m_CurrentRemoteThreadBuffer, true))
+	if (m_bIs64bit)
 	{
-		RemoteFreeMemory(ReturnPointerValue, sizeof(size_t));
-		return NULL;
+		size_t result;
+		if (ExecInWorkerThread(m_CurrentRemoteThreadBuffer, result) != ERROR_SUCCESS)
+		{
+			RemoteFreeMemory(ReturnPointerValue, sizeof(size_t));
+			return NULL;
+		}
+	}
+	else
+	{
+		if (!ExecuteRemoteThreadBuffer(m_CurrentRemoteThreadBuffer, true))
+		{
+			RemoteFreeMemory(ReturnPointerValue, sizeof(size_t));
+			return NULL;
+		}
 	}
 
 	size_t ProcAddressRemote = 0;
@@ -1081,7 +1201,13 @@ FARPROC CRemoteLoader::GetRemoteProcAddressA(LPCCH Module, SHORT procOrdinal)
 	HMODULE hRemoteModule = GetRemoteModuleHandleA(Module);
 	if (hRemoteModule == NULL)
 	{
-		hRemoteModule = LoadDependencyA(Module);
+		std::string strDll = Module;
+		std::wstring strBaseDll = L"";
+
+		strBaseDll.assign(strDll.begin(), strDll.end());
+		ResolvePath(strBaseDll, EnsureFullPath);
+
+		hRemoteModule = LoadDependencyW(strBaseDll.c_str());
 		if (hRemoteModule == NULL)
 			return NULL;
 	}
@@ -1123,7 +1249,7 @@ FARPROC CRemoteLoader::GetRemoteProcAddressA(LPCCH Module, SHORT procOrdinal)
 	return NULL;
 }
 
-BOOL CRemoteLoader::ProcessRelocation(ULONG ImageBaseDelta, WORD Data, PBYTE RelocationBase)
+BOOL CRemoteLoader::ProcessRelocation(size_t ImageBaseDelta, WORD Data, PBYTE RelocationBase)
 {
 	BOOL bReturn = TRUE;
 	switch (IMR_RELTYPE(Data))
@@ -1133,7 +1259,7 @@ BOOL CRemoteLoader::ProcessRelocation(ULONG ImageBaseDelta, WORD Data, PBYTE Rel
 		SHORT* Raw = (SHORT*)(RelocationBase + IMR_RELOFFSET(Data));
 		SHORT Backup = *Raw;
 
-		*Raw += HIWORD(ImageBaseDelta);
+		*Raw += (ULONG)HIWORD(ImageBaseDelta);
 
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_HIGH (0x%IX) -> (0x%IX)", Backup, *Raw);
@@ -1146,7 +1272,7 @@ BOOL CRemoteLoader::ProcessRelocation(ULONG ImageBaseDelta, WORD Data, PBYTE Rel
 		SHORT* Raw = (SHORT*)(RelocationBase + IMR_RELOFFSET(Data));
 		SHORT Backup = *Raw;
 
-		*Raw += LOWORD(ImageBaseDelta);
+		*Raw += (ULONG)LOWORD(ImageBaseDelta);
 
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_LOW (0x%IX) -> (0x%X)", Backup, *Raw);
@@ -1159,7 +1285,7 @@ BOOL CRemoteLoader::ProcessRelocation(ULONG ImageBaseDelta, WORD Data, PBYTE Rel
 		size_t* Raw = (size_t*)(RelocationBase + IMR_RELOFFSET(Data));
 		size_t Backup = *Raw;
 
-		*Raw += ImageBaseDelta;
+		*Raw += (size_t)ImageBaseDelta;
 
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[ProcessRelocation] IMAGE_REL_BASED_HIGHLOW (0x%IX) -> (0x%X)", Backup, *Raw);
@@ -1169,8 +1295,8 @@ BOOL CRemoteLoader::ProcessRelocation(ULONG ImageBaseDelta, WORD Data, PBYTE Rel
 	}
 	case IMAGE_REL_BASED_DIR64:
 	{
-		ULONGLONG* Raw = (ULONGLONG*)(RelocationBase + IMR_RELOFFSET(Data));
-		ULONGLONG Backup = *Raw;
+		ULONG_PTR UNALIGNED* Raw = (ULONG_PTR UNALIGNED*)(RelocationBase + IMR_RELOFFSET(Data));
+		ULONG_PTR UNALIGNED Backup = *Raw;
 
 		*Raw += ImageBaseDelta;
 
@@ -1225,7 +1351,7 @@ BOOL CRemoteLoader::ProcessRelocations(PVOID BaseAddress, PVOID RemoteAddress)
 	}
 	else
 	{
-		DWORD ImageBaseDelta = MakeDelta(DWORD, RemoteAddress, ImageNtHeaders->OptionalHeader.ImageBase);
+		size_t ImageBaseDelta = MakeDelta(size_t, RemoteAddress, ImageNtHeaders->OptionalHeader.ImageBase);
 
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[ProcessRelocations] VirtualAddress (0x%IX)",ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
@@ -1252,12 +1378,11 @@ BOOL CRemoteLoader::ProcessRelocations(PVOID BaseAddress, PVOID RemoteAddress)
 				{
 					PBYTE RelocBase = static_cast<PBYTE>(RvaToPointer(RelocationDirectory->VirtualAddress, BaseAddress));
 
-					DWORD NumRelocs = (RelocationDirectory->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
+					DWORD NumRelocs = (RelocationDirectory->SizeOfBlock - 8) >> 1;
 
 					PWORD RelocationData = reinterpret_cast<PWORD>(RelocationDirectory + 1);
 
 					#ifdef DEBUG_MESSAGES_ENABLED
-					DebugShout("[ProcessRelocations] RelocationDirectory (0x%IX)", RelocationDirectory);
 					DebugShout("[ProcessRelocations] RelocationData (0x%IX)", RelocationData);
 					#endif
 

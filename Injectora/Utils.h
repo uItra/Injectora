@@ -97,6 +97,26 @@ namespace Utils
 		return TRUE;
 	}
 
+	static bool FileExists(const std::wstring& path)
+	{
+		return (GetFileAttributesW(path.c_str()) != 0xFFFFFFFF);
+	}
+
+	static std::wstring StripPath(const std::wstring& path)
+	{
+		if (path.empty())
+			return path;
+
+		auto idx = path.rfind(L'\\');
+		if (idx == path.npos)
+			idx = path.rfind(L'/');
+
+		if (idx != path.npos)
+			return path.substr(idx + 1);
+		else
+			return path;
+	}
+
 	static BOOL DoesDirectoryExist(const char* path)
 	{
 		DWORD dwAttributes = GetFileAttributes(path);
@@ -111,6 +131,94 @@ namespace Utils
 		{
 			CreateDirectory(path, NULL);
 		}
+	}
+
+	static std::wstring GetProcessDirectory(HANDLE hProcess)
+	{
+		void* dwModuleHandle = 0;
+
+		PPROCESS_BASIC_INFORMATION pbi = NULL;
+		PEB peb;
+		PEB_LDR_DATA peb_ldr;
+
+		// Try to allocate buffer 
+		HANDLE	hHeap = GetProcessHeap();
+		DWORD dwSize = sizeof(PROCESS_BASIC_INFORMATION);
+		pbi = (PPROCESS_BASIC_INFORMATION)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, dwSize);
+
+		ULONG dwSizeNeeded = 0;
+
+		static tNTQIP fnNtQueryInformationProcess = (tNTQIP)Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "NtQueryInformationProcess");
+
+		NTSTATUS dwStatus = fnNtQueryInformationProcess(hProcess, ProcessBasicInformation, pbi, dwSize, &dwSizeNeeded);
+		if (dwStatus >= 0 && dwSize < dwSizeNeeded)
+		{
+			if (pbi)
+				HeapFree(hHeap, 0, pbi);
+
+			pbi = (PPROCESS_BASIC_INFORMATION)HeapAlloc(hHeap, HEAP_ZERO_MEMORY, dwSizeNeeded);
+			if (!pbi)
+			{
+				#ifdef _DEBUG
+				printf("Couldn't allocate heap buffer!\n");
+				#endif
+				return NULL;
+			}
+
+			dwStatus = fnNtQueryInformationProcess(hProcess, ProcessBasicInformation, pbi, dwSizeNeeded, &dwSizeNeeded);
+		}
+
+		// Did we successfully get basic info on process
+		if (dwStatus >= 0)
+		{
+			// Read Process Environment Block (PEB)
+			if (pbi->PebBaseAddress)
+			{
+				SIZE_T dwBytesRead = 0;
+				if (ReadProcessMemory(hProcess, pbi->PebBaseAddress, &peb, sizeof(peb), &dwBytesRead))
+				{
+					dwBytesRead = 0;
+					if (ReadProcessMemory(hProcess, peb.Ldr, &peb_ldr, sizeof(peb_ldr), &dwBytesRead))
+					{
+						LIST_ENTRY *pLdrListHead = (LIST_ENTRY *)peb_ldr.InLoadOrderModuleList.Flink;
+						LIST_ENTRY *pLdrCurrentNode = peb_ldr.InLoadOrderModuleList.Flink;
+
+						LDR_DATA_TABLE_ENTRY lstEntry = { 0 };
+						dwBytesRead = 0;
+						if (!ReadProcessMemory(hProcess, (void*)pLdrCurrentNode, &lstEntry, sizeof(LDR_DATA_TABLE_ENTRY), &dwBytesRead))
+						{
+							if (pbi)
+								HeapFree(hHeap, 0, pbi);
+							return NULL;
+						}
+
+						pLdrCurrentNode = lstEntry.InLoadOrderLinks.Flink;
+
+						wchar_t wcsFullDllName[MAX_PATH] = { 0 };
+						if (lstEntry.BaseDllName.Length > 0)
+						{
+							dwBytesRead = 0;
+							if (ReadProcessMemory(hProcess, (LPCVOID)lstEntry.FullDllName.Buffer, &wcsFullDllName, lstEntry.FullDllName.Length, &dwBytesRead))
+							{
+								wchar_t* pathEnd = 0;
+								pathEnd = wcsrchr(wcsFullDllName, L'\\');
+								if (!pathEnd)
+									pathEnd = wcsrchr(wcsFullDllName, L'/');
+
+								*pathEnd++ = L'\0';
+
+								return std::wstring(wcsFullDllName);
+							}
+						}
+					} // Get Ldr
+				} // Read PEB 
+			} // Check for PEB
+		}
+
+		if (pbi)
+			HeapFree(hHeap, 0, pbi);
+
+		return std::wstring();
 	}
 
 	static LONG GetProcessorArchitecture()

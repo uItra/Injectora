@@ -268,9 +268,6 @@ void CRemoteCode::PushCall(calling_convention_t cconv, FARPROC CallAddress)
 
 		if (m_bIs64bit) // 64 bit
 		{
-			/* Backup parameter register RCX, RDX, R8, and R9 onto stack */
-			//BeginCall64();
-
 			////////////////////////////////////////////////////////////////////////////////////////////////
 			//  First things first. 64 bit mandatory "shadow" space of at least 40 bytes for EVERY call   //
 			//  Stack is 16 byte aligned. Every other param after rcx, rdx, r8, and r9 */				  //
@@ -590,9 +587,6 @@ void CRemoteCode::EndCall64()
 {
 	// Restore registers and return
 
-	// xor eax, eax
-	// AddByteToBuffer(0x31);
-	// AddByteToBuffer(0xC0);
 	// mov    rcx,QWORD PTR [rsp+0x8]
 	AddByteToBuffer(0x48);
 	AddByteToBuffer(0x8B);
@@ -623,9 +617,9 @@ void CRemoteCode::EndCall64()
 
 void CRemoteCode::AddByteToBuffer(unsigned char in)
 {
-	#ifdef DEBUG_MESSAGES_ENABLED
-	DebugShout("Byte added to buffer: 0x%.2X", in);
-	#endif
+	//#ifdef DEBUG_MESSAGES_ENABLED
+	//DebugShout("Byte added to buffer: 0x%.2X", in);
+	//#endif
 	m_CurrentRemoteThreadBuffer.push_back(in);
 }
 
@@ -947,6 +941,29 @@ void CRemoteCode::PushAllParameters(bool right_to_left)
 	}
 }
 
+DWORD CRemoteCode::CreateRPCEnvironment(bool noThread /*= false*/)
+{
+	DWORD dwResult = ERROR_SUCCESS;
+	DWORD thdID = 1337;
+	bool status = true;
+
+	// Allocate environment codecave
+	if (m_pWorkerCode == nullptr)
+		m_pWorkerCode = RemoteAllocateMemory(0x1000);
+
+	// Create RPC thread
+	if (noThread == false)
+		thdID = CreateWorkerThread();
+
+	// Create synchronization event
+	status = CreateAPCEvent(thdID);
+	if (thdID == 0 || status == false)
+		dwResult = GetLastError();
+
+	return dwResult;
+}
+
+
 /*
 Create thread for RPC
 
@@ -994,6 +1011,7 @@ DWORD CRemoteCode::CreateWorkerThread()
 
 		m_dwWorkerCodeSize = m_CurrentRemoteThreadBuffer.size();
 		m_pWorkerCodeThread = (void*)((size_t)m_pWorkerCode + space);
+		m_pUserCode = (void*)((size_t)m_pWorkerCodeThread + m_dwWorkerCodeSize);
 
 		BOOL bWrite = WriteProcessMemory(m_hProcess, (void*)m_pWorkerCodeThread, newBuffer, m_dwWorkerCodeSize, NULL);
 		if (bWrite == FALSE)
@@ -1028,20 +1046,29 @@ DWORD CRemoteCode::CreateWorkerThread()
 		return GetThreadId(m_hWorkThd);
 }
 
-void CRemoteCode::ExitThreadWithStatus()
+DWORD CRemoteCode::TerminateWorkerThread()
 {
-	// mov  rcx, rax
-	AddByteToBuffer(0x48);
-	AddByteToBuffer(0x89); 
-	AddByteToBuffer(0xC1);
-	// mov  r13, [ExitThread]
-	AddByteToBuffer(0x49);
-	AddByteToBuffer(0xBD);
-	AddLong64ToBuffer((INT_PTR)ExitThread);
-	// call r13
-	AddByteToBuffer(0x41);
-	AddByteToBuffer(0xFF); 
-	AddByteToBuffer(0xD5);
+	if (m_hWaitEvent)
+	{
+		CloseHandle(m_hWaitEvent);
+		m_hWaitEvent = NULL;
+	}
+
+	if (m_hWorkThd)
+	{
+		BOOL res = TerminateThread(m_hWorkThd, 0);
+		m_hWorkThd = NULL;
+
+		if (m_pWorkerCode)
+		{
+			RemoteFreeMemory(m_pWorkerCode, 0x1000);
+			m_pWorkerCode = nullptr;
+		}
+
+		return res == TRUE;
+	}
+	else
+		return ERROR_SUCCESS;
 }
 
 bool CRemoteCode::CreateAPCEvent( DWORD threadID )
@@ -1146,6 +1173,164 @@ bool CRemoteCode::CreateAPCEvent( DWORD threadID )
     }
 
     return true;
+}
+
+bool CRemoteCode::CreateActx(LPCCH Path, int id /*= 2*/)
+{
+	size_t   result = 0;
+	ACTCTX  act = { 0 };
+
+	m_pAContext = RemoteAllocateMemory(512);
+
+	act.cbSize = sizeof(act);
+	act.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID;
+	act.lpSource = (LPCSTR)((SIZE_T)m_pAContext + sizeof(HANDLE) + sizeof(act));
+	act.lpResourceName = MAKEINTRESOURCE(id);
+
+	BeginCall64();
+
+	// CreateActCtx(&act)
+	PushInt64((unsigned __int64)((size_t)m_pAContext + sizeof(HANDLE)));
+	PushCall(CCONV_WIN64, (FARPROC)CreateActCtx);
+	// pTopImage->pAContext = CreateActCtx(&act)
+	// mov rdx, m_pAContext
+	AddByteToBuffer(0x48);
+	AddByteToBuffer(0xBA);
+	AddLong64ToBuffer((unsigned __int64)m_pAContext);
+	// mov [rdx], rax
+	AddByteToBuffer(0x48);
+	AddByteToBuffer(0x89);
+	AddByteToBuffer(0x02);
+
+	SaveRetValAndSignalEvent();
+
+	EndCall64();
+
+	if (WriteProcessMemory(m_hProcess, (BYTE*)m_pAContext + sizeof(HANDLE), &act, sizeof(act), NULL) &&
+		WriteProcessMemory(m_hProcess, (BYTE*)m_pAContext + sizeof(HANDLE) + sizeof(act), (void*)Path, (strlen(Path) + 1) * sizeof(TCHAR), NULL))
+	{
+		if (ExecInWorkerThread(m_CurrentRemoteThreadBuffer, result) != ERROR_SUCCESS || (HANDLE)result == INVALID_HANDLE_VALUE)
+		{
+			if (m_pAContext)
+			{
+				RemoteFreeMemory(m_pAContext, 512);
+				m_pAContext = nullptr;
+			}
+
+			SetLastError(100204);
+			return false;
+		}
+	}
+	else
+	{
+		return false;
+	}
+
+
+	return true;
+}
+
+DWORD CRemoteCode::ExecInWorkerThread(remote_thread_buffer_t thread_data, size_t& callResult)
+{
+	DWORD dwResult = ERROR_SUCCESS;
+
+	#ifdef DEBUG_MESSAGES_ENABLED
+	DebugShoutBufferHex();
+	#endif
+
+	void* RemoteBuffer = NULL;
+
+	unsigned char *newBuffer = new unsigned char[thread_data.size()];
+
+	for (int i = 0; i < (int)thread_data.size(); i++)
+		newBuffer[i] = thread_data[i];
+
+	// Write code
+	RemoteBuffer = CommitMemory(newBuffer, thread_data.size());
+
+	delete[] newBuffer;
+
+	if (RemoteBuffer == NULL)
+		return false;
+
+	#ifdef DEBUG_MESSAGES_ENABLED
+	DebugShout("RemoteBuffer: 0x%IX\n", RemoteBuffer);
+	#endif
+
+	// Create thread if needed
+	if (!m_hWorkThd)
+		CreateRPCEnvironment();
+
+	// Reset wait event
+	if (m_hWaitEvent)
+		ResetEvent(m_hWaitEvent);
+
+	// Execute code in thread context
+	if (QueueUserAPC((PAPCFUNC)RemoteBuffer, m_hWorkThd, (ULONG_PTR)m_pWorkerCode))
+	{
+		dwResult = WaitForSingleObject(m_hWaitEvent, INFINITE);
+		ReadProcessMemory(m_hProcess, m_pWorkerCode, &callResult, sizeof(size_t), NULL);
+	}
+
+	// Ensure APC function fully returns
+	Sleep(1);
+
+	// Free remote memory. Don't wanna forget lel
+	RemoteFreeMemory(RemoteBuffer, thread_data.size());
+
+	// Destroy remote buffer for next one
+	DestroyRemoteThreadBuffer();
+
+	return dwResult;
+}
+
+void CRemoteCode::ExitThreadWithStatus()
+{
+	// mov  rcx, rax
+	AddByteToBuffer(0x48);
+	AddByteToBuffer(0x89); 
+	AddByteToBuffer(0xC1);
+	// mov  r13, [ExitThread]
+	AddByteToBuffer(0x49);
+	AddByteToBuffer(0xBD);
+	AddLong64ToBuffer((INT_PTR)ExitThread);
+	// call r13
+	AddByteToBuffer(0x41);
+	AddByteToBuffer(0xFF); 
+	AddByteToBuffer(0xD5);
+}
+
+//
+// Signal wait event. If it's not signaled, 
+// then the call will not disengage from the thread
+//
+void CRemoteCode::SaveRetValAndSignalEvent()
+{
+	// mov rdx, [rsp + 0x8]
+	AddByteToBuffer(0x48);
+	AddByteToBuffer(0x8B); 
+	AddByteToBuffer(0x54);
+	AddByteToBuffer(0x24); 
+	AddByteToBuffer(0x08);
+	// mov [rdx], rax
+	AddByteToBuffer(0x48);
+	AddByteToBuffer(0x89);
+	AddByteToBuffer(0x02);
+
+	// SetEvent(hEvent)
+	// mov rcx, [rdx + 0x8]
+	AddByteToBuffer(0x48);
+	AddByteToBuffer(0x8B); 
+	AddByteToBuffer(0x4A); 
+	AddByteToBuffer(0x08);
+	// mov r13, SetEvent
+	AddByteToBuffer(0x49);
+	AddByteToBuffer(0xBD);
+	AddLong64ToBuffer((INT_PTR)SetEvent);
+	// call r13
+	AddByteToBuffer(0x41);
+	AddByteToBuffer(0xFF);
+	AddByteToBuffer(0xD5);
 }
 
 void* CRemoteCode::CommitMemory(void *data, SIZE_T size_of_data)
@@ -1284,11 +1469,11 @@ void CRemoteCode::DebugShout(const char *fmt, ...)
 
 void CRemoteCode::DebugShoutBufferHex()
 {
-	m_logFile.open(m_infoLog);
+	m_logFile.open(m_infoLog, ios::out | ios::app);
 
 	int count = 1;
 
-	m_logFile << "RemoteThreadBuffer:" << std::endl;
+	m_logFile << "RemoteThreadBuffer:";
 	m_logFile << std::endl << " offset | 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F" 
 			  << std::endl << "--------|------------------------------------------------"
 			  << std::endl << "00000000| ";

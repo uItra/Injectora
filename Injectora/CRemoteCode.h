@@ -138,9 +138,18 @@ protected:
 	void					EndCall64();
 
 protected:
+	DWORD					CreateRPCEnvironment(bool noThread = false);
 	bool					CreateAPCEvent(DWORD threadID);
 	DWORD					CreateWorkerThread();
+	DWORD					TerminateWorkerThread();
+
 	void					ExitThreadWithStatus();
+	void					SaveRetValAndSignalEvent();
+
+	DWORD					ExecInWorkerThread(remote_thread_buffer_t buffer, size_t& callResult);
+
+	bool					CreateActx(LPCCH Path, int id = 2);
+	
 	
 
 
@@ -158,7 +167,10 @@ protected:
 	HANDLE					m_hWorkThd;  // Worker thread handle
 	void*					m_pWorkerCode;
 	void*					m_pWorkerCodeThread; // m_pWorkCode + space
+	void*					m_pUserCode; // m_pWorkCode + space + m_pWorkCodeSize
 	size_t					m_dwWorkerCodeSize;
+
+	void*					m_pAContext;        // SxS activation context memory address
 
 	char					m_baseDir[MAX_PATH];
 	char					m_infoLog[MAX_PATH];

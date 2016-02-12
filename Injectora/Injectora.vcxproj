@@ -135,6 +135,7 @@
   <ItemGroup>
     <ClInclude Include="AboutComponent.h" />
     <ClInclude Include="AboutWindow.h" />
+    <ClInclude Include="ApiSet.h" />
     <ClInclude Include="CRemoteCode.h" />
     <ClInclude Include="CRemoteLoader.h" />
     <ClInclude Include="Injector.h" />

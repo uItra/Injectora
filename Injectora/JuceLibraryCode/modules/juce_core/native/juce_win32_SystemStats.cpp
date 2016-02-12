@@ -177,6 +177,11 @@ static bool isWindowsVersionOrLater(SystemStats::OperatingSystemType target)
 	return VerifyVersionInfo(&info, VER_MAJORVERSION | VER_MINORVERSION | VER_SERVICEPACKMAJOR | VER_SERVICEPACKMINOR, mask) != FALSE;
 }
 
+bool SystemStats::IsWindowsVersionOrLater(SystemStats::OperatingSystemType type)
+{
+	return isWindowsVersionOrLater(type);
+}
+
 SystemStats::OperatingSystemType SystemStats::getOperatingSystemType()
 {
 	const SystemStats::OperatingSystemType types[] = { Windows10, Windows8, Windows7, WinVista, WinXP, Win2000 };

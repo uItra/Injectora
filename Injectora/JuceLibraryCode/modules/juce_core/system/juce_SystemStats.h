@@ -71,12 +71,14 @@ public:
                                      you can use the expression ((getOperatingSystemType() & Windows) != 0). */
     };
 
+	static bool IsWindowsVersionOrLater(OperatingSystemType);
+
     /** Returns the type of operating system we're running on.
 
         @returns one of the values from the OperatingSystemType enum.
         @see getOperatingSystemName
     */
-    static OperatingSystemType getOperatingSystemType();
+    static OperatingSystemType getOperatingSystemType();	
 
     /** Returns the name of the type of operating system we're running on.
 
