@@ -2,6 +2,8 @@
 #include "Utils.h"
 #include "ProcessInfo.h"
 
+#include <shlobj.h>
+
 #ifndef _CREMOTECODE_H_
 #define _CREMOTECODE_H_
 
@@ -121,6 +123,8 @@ public:
 	string					CallingConventionToString(calling_convention_t cconv);
 	string					ParameterTypeToString(parameter_type_t type);
 
+	bool					SetBaseDirectory();
+
 	#ifdef DEBUG_MESSAGES_ENABLED
 	void					DebugShout(const char *szShout, ...);
 	void					DebugShoutBufferHex();
@@ -148,7 +152,7 @@ protected:
 	void					ExitThreadWithStatus();
 	void					SaveRetValAndSignalEvent();
 
-	bool					CreateActx(LPCCH Path, int id = 2);
+	bool					CreateActxFromManifest(const char* Manifest);
 
 protected:
 	HANDLE					m_hProcess;
@@ -169,8 +173,12 @@ protected:
 
 	void*					m_pAContext;        // SxS activation context memory address
 
+	bool					m_bBaseDirIsSet;
 	char					m_baseDir[MAX_PATH];
 	char					m_infoLog[MAX_PATH];
+	
+	char					m_tempManifest[MAX_PATH];
+
 	ofstream				m_logFile;
 
 };

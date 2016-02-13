@@ -1175,17 +1175,16 @@ bool CRemoteCode::CreateAPCEvent( DWORD threadID )
     return true;
 }
 
-bool CRemoteCode::CreateActx(LPCCH Path, int id /*= 2*/)
+bool CRemoteCode::CreateActxFromManifest(const char* Manifest)
 {
-	size_t   result = 0;
+	size_t  result = 0;
 	ACTCTX  act = { 0 };
 
 	m_pAContext = RemoteAllocateMemory(512);
 
 	act.cbSize = sizeof(act);
-	act.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID;
-	act.lpSource = (LPCSTR)((SIZE_T)m_pAContext + sizeof(HANDLE) + sizeof(act));
-	act.lpResourceName = MAKEINTRESOURCE(id);
+	// set the source as the temporary manifest file that we extracted using the pe info
+	act.lpSource = (LPCSTR)((SIZE_T)m_pAContext + sizeof(HANDLE) + sizeof(act)); 
 
 	BeginCall64();
 
@@ -1206,26 +1205,25 @@ bool CRemoteCode::CreateActx(LPCCH Path, int id /*= 2*/)
 
 	EndCall64();
 
-	if (WriteProcessMemory(m_hProcess, (BYTE*)m_pAContext + sizeof(HANDLE), &act, sizeof(act), NULL) &&
-		WriteProcessMemory(m_hProcess, (BYTE*)m_pAContext + sizeof(HANDLE) + sizeof(act), (void*)Path, (strlen(Path) + 1) * sizeof(TCHAR), NULL))
+	if (WriteProcessMemory(m_hProcess, (BYTE*)m_pAContext + sizeof(HANDLE), &act, sizeof(act), NULL))
 	{
-		if (ExecuteInWorkerThread(m_CurrentRemoteThreadBuffer, result) != ERROR_SUCCESS || (HANDLE)result == INVALID_HANDLE_VALUE)
+		if (WriteProcessMemory(m_hProcess, (BYTE*)m_pAContext + sizeof(HANDLE) + sizeof(act), (void*)Manifest, strlen(Manifest) + 1, NULL))
 		{
-			if (m_pAContext)
+			if (ExecuteInWorkerThread(m_CurrentRemoteThreadBuffer, result) != ERROR_SUCCESS || (HANDLE)result == INVALID_HANDLE_VALUE)
 			{
-				RemoteFreeMemory(m_pAContext, 512);
-				m_pAContext = nullptr;
-			}
+				if (m_pAContext)
+				{
+					RemoteFreeMemory(m_pAContext, 512);
+					m_pAContext = nullptr;
+				}
 
-			SetLastError(100204);
-			return false;
+				SetLastError(100204);
+				return false;
+			}
 		}
 	}
 	else
-	{
 		return false;
-	}
-
 
 	return true;
 }
@@ -1387,53 +1385,63 @@ string CRemoteCode::ParameterTypeToString(parameter_type_t type)
 	return szParameterTypes[type];
 }
 
+bool CRemoteCode::SetBaseDirectory()
+{
+	if (m_bBaseDirIsSet)
+		return true;
+
+	char szAppDataPath[MAX_PATH];
+	if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_APPDATA, NULL, NULL, szAppDataPath)))
+	{
+		char* lastDirectorySlash = strrchr(szAppDataPath, '\\');
+		*(++lastDirectorySlash) = '\0';
+
+		strcpy_s(m_baseDir, szAppDataPath);
+		strcat_s(m_baseDir, "Local\\injectora\\");
+
+		if (!Utils::DoesDirectoryExist(m_baseDir))
+			CreateDirectory(m_baseDir, NULL);
+
+		m_bBaseDirIsSet = true;
+
+		return true;
+	}
+
+	return false;
+}
+
 #ifdef DEBUG_MESSAGES_ENABLED
 void CRemoteCode::DebugShout(const char *fmt, ...)
 {
 	static bool doneOnce = false;
 	if (!doneOnce)
 	{
-		char szAppDataPath[MAX_PATH];
-		if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_APPDATA, NULL, NULL, szAppDataPath)))
+		if (SetBaseDirectory())
 		{
-			for (int i = (int)strlen(szAppDataPath); i > 0; --i)
-			{
-				if (szAppDataPath[i] == '\\')
-				{
-					szAppDataPath[i + 1] = 0;
-					break;
-				}
-			}
-			strcpy_s(m_baseDir, szAppDataPath);
-			strcat_s(m_baseDir, "Local\\injectora\\");
-			Utils::CreateDirectoryIfNeeded(m_baseDir);
-			printf_s("basedir: %s\n", m_baseDir);
+			strcpy_s(m_infoLog, m_baseDir);
+			strcat_s(m_infoLog, "injectora.log");
+
+			const time_t now = time(0);
+
+			tm timeStruct;
+			localtime_s(&timeStruct, &now);
+
+			char timeBuffer[80]; char outTimeBuffer[80];
+			strftime(timeBuffer, sizeof(timeBuffer), "%m\\%d\\%Y %X", &timeStruct);
+			_snprintf_s(outTimeBuffer, sizeof(outTimeBuffer), "\nINJECTORA\n%s\n\n", timeBuffer);
+
+			OutputDebugString(outTimeBuffer);
+
+			m_logFile.open(m_infoLog, ios::out | ios::trunc);
+			m_logFile << "INJECTORA" << std::endl << timeBuffer << std::endl << std::endl;
+			m_logFile.close();
+
+			doneOnce = true;
 		}
-		else
-		{
-			printf_s("Unable to create log file!!\n");
-		}
-
-		strcpy_s(m_infoLog, m_baseDir);
-		strcat_s(m_infoLog, "injectora.log");
-		
-		const time_t now = time(0);
-		
-		tm timeStruct;
-		localtime_s(&timeStruct, &now);
-
-		char timeBuffer[80]; char outTimeBuffer[80];
-		strftime(timeBuffer, sizeof(timeBuffer), "%m\\%d\\%Y %X", &timeStruct);
-		_snprintf_s(outTimeBuffer, sizeof(outTimeBuffer), "\nINJECTORA\n%s\n\n", timeBuffer);
-
-		OutputDebugString(outTimeBuffer);
-
-		m_logFile.open(m_infoLog, ios::out | ios::trunc);
-		m_logFile << "INJECTORA" << std::endl << timeBuffer << std::endl << std::endl;
-		m_logFile.close();
-
-		doneOnce = true;
 	}
+
+	if (!m_bBaseDirIsSet)
+		return;
 
 	char *va_args;
 	char szLogBuffer[512];
@@ -1469,6 +1477,9 @@ void CRemoteCode::DebugShout(const char *fmt, ...)
 
 void CRemoteCode::DebugShoutBufferHex()
 {
+	if (!m_bBaseDirIsSet)
+		return;
+
 	m_logFile.open(m_infoLog, ios::out | ios::app);
 
 	int count = 1;

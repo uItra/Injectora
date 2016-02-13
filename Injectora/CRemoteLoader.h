@@ -83,6 +83,11 @@ protected:
 
 	BOOL							CallEntryPoint( PVOID BaseAddress, FARPROC Entrypoint );
 
+	bool							CreateActx(PVOID BaseAddress);
+
+	bool							CreateTempManifestFileFromMemory(PVOID BaseAddress, DWORD ResourceId);
+	DWORD							GetEmbeddedManifestResourceFromMemory(PVOID BaseAddress, DWORD ResourceId, void** Resource);
+
 	BOOL							ProcessDelayedImportTable(PVOID BaseAddress, PVOID RemoteAddress );
 	BOOL							ProcessImportTable( PVOID BaseAddress, PVOID RemoteAddress );
 	BOOL							ProcessRelocation( size_t ImageBaseDelta, WORD Data, PBYTE RelocationBase );

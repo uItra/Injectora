@@ -281,51 +281,6 @@ HMODULE CRemoteLoader::LoadLibraryByPathIntoMemoryA(LPCCH Path, BOOL PEHeader)
 		return NULL;
 	}
 
-	//
-	// Create Remote Procedure Call environment. No need for this in 32 bit
-	//
-	if ( m_bIs64bit)
-	{
-		// Obtain activation context for the module we're injecting
-		ACTCTX act = { 0 };
-		act.cbSize = sizeof(act);
-		act.dwFlags = ACTCTX_FLAG_RESOURCE_NAME_VALID;
-		act.lpSource = Path;
-		act.lpResourceName = MAKEINTRESOURCEA(2);
-		m_hActx = CreateActCtx(&act);
-		if (m_hActx == INVALID_HANDLE_VALUE)
-		{
-			act.lpResourceName = MAKEINTRESOURCEA(1);
-			m_hActx = CreateActCtx(&act);
-		}
-		// // // // 
-
-		DWORD err = CreateRPCEnvironment();
-		if (err != ERROR_SUCCESS)
-		{
-			#ifdef DEBUG_MESSAGES_ENABLED
-			DebugShout("[LoadLibraryFromMemory] CreateRPCEnvironment failed. Error 0x%X", err);
-			#endif
-			return NULL;
-		}
-
-		#ifdef DEBUG_MESSAGES_ENABLED
-		DebugShout("[LoadLibraryFromMemory] Creating Activation Context!");
-		#endif
-		if (!CreateActx(Path, 2))
-		{
-			#ifdef DEBUG_MESSAGES_ENABLED
-			DebugShout("[LoadLibraryFromMemory] Failed to create Activation Context under Resource ID 2. Trying ID 1...");
-			#endif
-			if (!CreateActx(Path, 1))
-			{
-				#ifdef DEBUG_MESSAGES_ENABLED
-				DebugShout("[LoadLibraryFromMemory] Failed to create Activation Context under from manifest under Resource ID 1 and 2!");
-				#endif
-			}
-		}
-	}
-
 	hReturnValue = LoadLibraryFromMemory(File.Buffer, File.Size, PEHeader);
 	if (FreeModuleFile(File) == FALSE)
 	{
@@ -369,12 +324,44 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 		return NULL;
 	}
 
-	/*
-	  We do not trust the value of hdr.OptionalHeader.SizeOfImage so we calculate our own SizeOfImage.
-	  This is the size of the continuous memory block that can hold the headers and all sections.
-	  We will search the lowest and highest RVA among the section boundaries. If we must load the
-	  header then its RVA will be the lowest (zero) and its size will be (file_offset_section_headers + size_section_headers).
-	*/
+	//
+	// Create Remote Procedure Call environment. No need for this in 32 bit
+	//
+	if ( m_bIs64bit)
+	{
+		DWORD err = CreateRPCEnvironment();
+		if (err != ERROR_SUCCESS)
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[LoadLibraryFromMemory] CreateRPCEnvironment failed. Error 0x%X", err);
+			#endif
+			return NULL;
+		}
+		
+		//
+		// Create activation context for the module we're injecting
+		//
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[LoadLibraryFromMemory] Creating Activation Context!");
+		#endif
+
+		if (!CreateActx(BaseAddress))
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[LoadLibraryFromMemory] Failed to obtain embedded resource! Continuing anyway without Activation Context...");
+			#endif
+		}
+		else
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[LoadLibraryFromMemory] Createed Activation Context successfully!");
+			#endif
+		}
+	}
+
+	// We do not trust the value of hdr.OptionalHeader.SizeOfImage so we calculate our own SizeOfImage.
+	// This is the size of the continuous memory block that can hold the headers and all sections.
+	//
 	size_t rva_low = (!PEHeader) ? 0xFFFFFFFFFFFFFFFF : 0;
 	size_t rva_high = 0;
 	PIMAGE_SECTION_HEADER ImageSectionHeader = (PIMAGE_SECTION_HEADER)((ULONG_PTR)&ImageNtHeaders->OptionalHeader + ImageNtHeaders->FileHeader.SizeOfOptionalHeader);
@@ -389,6 +376,7 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 	}
 
 	// Calculated Image Size
+	//
 	size_t ImageSize = rva_high - rva_low;
 
 	#ifdef DEBUG_MESSAGES_ENABLED
@@ -796,6 +784,173 @@ BOOL CRemoteLoader::CallEntryPoint(void* BaseAddress, FARPROC Entrypoint)
 	#endif 
 
 	return ExecuteRemoteThreadBuffer(m_CurrentRemoteThreadBuffer, true);
+}
+
+bool CRemoteLoader::CreateActx(PVOID BaseAddress)
+{
+	if (CreateTempManifestFileFromMemory(BaseAddress, 2))
+	{
+		if (!CreateActxFromManifest(m_tempManifest))
+			return false;
+		return true;
+	}
+	else
+	{
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[LoadLibraryFromMemory] Failed to get temp manifest from memory using Resource ID 2. Trying ID 1...");
+		#endif
+		if (CreateTempManifestFileFromMemory(BaseAddress, 1))
+		{
+			if (!CreateActxFromManifest(m_tempManifest))
+				return false;
+			return true;
+		}
+		else
+		{
+			return false;		
+		}
+	}
+}
+
+bool CRemoteLoader::CreateTempManifestFileFromMemory(PVOID BaseAddress, DWORD ResourceId)
+{
+	void* ManifestResource = NULL;
+	DWORD ManifestSize = GetEmbeddedManifestResourceFromMemory(BaseAddress, ResourceId, &ManifestResource);
+	if (ManifestResource)
+	{
+		if (!SetBaseDirectory())
+		{
+			#ifdef DEBUG_MESSAGES_ENABLED
+			DebugShout("[CreateTempManifestFileFromMemory] Failed to get base directory to create temp manifest in!");
+			#endif
+			return false;
+		}
+
+		strcpy_s(m_tempManifest, m_baseDir);
+		strcat_s(m_tempManifest, "temp.dll.manifest");
+
+		FILE* f;
+		errno_t err = fopen_s(&f, m_tempManifest, "w");
+		if (f && err == NULL)
+			fwrite(ManifestResource, sizeof(char), ManifestSize, f);
+		fclose(f);
+
+		return true;
+	}
+
+	#ifdef DEBUG_MESSAGES_ENABLED
+	DebugShout("[CreateTempManifestFileFromMemory] Failed to obtain embedded Manifest resource from memory!");
+	#endif
+
+	return false;
+}
+
+DWORD CRemoteLoader::GetEmbeddedManifestResourceFromMemory(PVOID BaseAddress, DWORD ResourceId, void** Resource)
+{
+	PIMAGE_NT_HEADERS ImageNtHeaders = ToNts(BaseAddress);
+	if (ImageNtHeaders == NULL)
+		return FALSE;
+
+	DWORD ResourceSize = ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].Size;
+	if (ResourceSize)
+	{
+		PIMAGE_RESOURCE_DIRECTORY RootResourceDir = (PIMAGE_RESOURCE_DIRECTORY)RvaToPointer(ImageNtHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_RESOURCE].VirtualAddress, BaseAddress);
+		if (RootResourceDir)
+		{
+			const IMAGE_RESOURCE_DIR_STRING_U* dir_string = 0;
+
+			// 
+			// enumerate all types
+			// 
+			for (WORD i = 0; i < RootResourceDir->NumberOfIdEntries + RootResourceDir->NumberOfNamedEntries; i++)
+			{
+				PIMAGE_RESOURCE_DIRECTORY_ENTRY EntryType = (PIMAGE_RESOURCE_DIRECTORY_ENTRY)(RootResourceDir + 1 + i);
+				if ((EntryType->OffsetToDirectory) >= ResourceSize)
+					return NULL;
+
+				PIMAGE_RESOURCE_DIRECTORY ResType = (PIMAGE_RESOURCE_DIRECTORY)((PBYTE)RootResourceDir + (EntryType->OffsetToDirectory));
+
+				if (EntryType->NameIsString) {
+					dir_string = reinterpret_cast<const IMAGE_RESOURCE_DIR_STRING_U*>((PBYTE)RootResourceDir + EntryType->NameOffset);
+					#ifdef DEBUG_MESSAGES_ENABLED
+					DebugShout("[GetEmbeddedManifestResourceFromMemory] Resource Id: %S", &dir_string->NameString[0]);
+					#endif
+				} else {
+					#ifdef DEBUG_MESSAGES_ENABLED
+					DebugShout("[GetEmbeddedManifestResourceFromMemory] Resource Id: %i", EntryType->Id);
+					#endif
+				}
+
+				//
+				// enumerate all names
+				//
+				for (WORD j = 0; j < ResType->NumberOfIdEntries + ResType->NumberOfNamedEntries; j++)
+				{
+					PIMAGE_RESOURCE_DIRECTORY_ENTRY EntryIdentifier = reinterpret_cast<PIMAGE_RESOURCE_DIRECTORY_ENTRY>(ResType + 1 + j);
+					if ((EntryIdentifier->OffsetToDirectory) >= ResourceSize)
+						return NULL;
+
+					// Check if the resource ID is what we're looking for or not
+					if (EntryIdentifier->Id != ResourceId)
+						continue;
+
+					PIMAGE_RESOURCE_DIRECTORY ResIdentifier = (PIMAGE_RESOURCE_DIRECTORY)((PBYTE)RootResourceDir + (EntryIdentifier->OffsetToDirectory));
+
+					if (EntryIdentifier->NameIsString) {
+						dir_string = reinterpret_cast<const IMAGE_RESOURCE_DIR_STRING_U*>((PBYTE)RootResourceDir + EntryIdentifier->NameOffset);
+						#ifdef DEBUG_MESSAGES_ENABLED
+						DebugShout("[GetEmbeddedManifestResourceFromMemory] Resource Id: %S", &dir_string->NameString[0]);
+						#endif
+					} else {
+						#ifdef DEBUG_MESSAGES_ENABLED
+						DebugShout("[GetEmbeddedManifestResourceFromMemory] Resource Id: %i", EntryIdentifier->Id);
+						#endif
+					}
+
+					//
+					// enumerate all languages 
+					// now we have access to the offsets of the data
+					//
+					for (WORD k = 0; k < ResIdentifier->NumberOfIdEntries + ResIdentifier->NumberOfNamedEntries; k++)
+					{
+						PIMAGE_RESOURCE_DIRECTORY_ENTRY DataLangEntry = (PIMAGE_RESOURCE_DIRECTORY_ENTRY)(ResIdentifier + 1 + k);
+						if ((DataLangEntry->OffsetToDirectory) >= ResourceSize)
+							return FALSE;
+
+						PIMAGE_RESOURCE_DATA_ENTRY pData = (PIMAGE_RESOURCE_DATA_ENTRY)((PBYTE)RootResourceDir + (DataLangEntry->OffsetToDirectory));
+
+						if (DataLangEntry->NameIsString) {
+							dir_string = reinterpret_cast<const IMAGE_RESOURCE_DIR_STRING_U*>((PBYTE)RootResourceDir + DataLangEntry->NameOffset);
+							#ifdef DEBUG_MESSAGES_ENABLED
+							DebugShout("[GetEmbeddedManifestResourceFromMemory] Resource Id: %S", &dir_string->NameString[0]);
+							#endif
+						} else {
+							#ifdef DEBUG_MESSAGES_ENABLED
+							DebugShout("[GetEmbeddedManifestResourceFromMemory] Resource Id: %i", DataLangEntry->Id);
+							#endif
+						}
+						
+						if (pData->Size == 0)
+							continue;
+
+						void* ResourceData = RvaToPointer(pData->OffsetToData, BaseAddress);
+						if (ResourceData && (DWORD64)ResourceData == (DWORD64)-1)
+							continue;	// empty or encrypted resource?
+
+						#ifdef DEBUG_MESSAGES_ENABLED
+						DebugShout("[GetEmbeddedManifestResourceFromMemory] Resource Data: 0x%IX", ResourceData);
+						#endif
+
+						*Resource = ResourceData;
+
+						return pData->Size;
+					}
+				}
+			}
+		}
+	}
+	// Empty or no resource directory
+	return NULL;
 }
 
 BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
@@ -1486,25 +1641,29 @@ BOOL CRemoteLoader::ProcessSections(PVOID BaseAddress, PVOID RemoteAddress, BOOL
 		return FALSE;
 
 	// Writing the PE header
-	if (MapPEHeader)
-	{
+	//if (MapPEHeader)
+	//{
 		if (WriteProcessMemory(m_hProcess, RemoteAddress, BaseAddress, ImageNtHeaders->OptionalHeader.SizeOfHeaders, NULL) == FALSE)
 		{
-		#ifdef DEBUG_MESSAGES_ENABLED
+			#ifdef DEBUG_MESSAGES_ENABLED
 			DebugShout("[ProcessSections] Failed to map PE header!");
+			#endif
 		}
 		else
 		{
+			#ifdef DEBUG_MESSAGES_ENABLED
 			DebugShout("[ProcessSections] Mapped PE Header successfully!");
-		#endif
+			#endif
 		}
-	}
-	#ifdef DEBUG_MESSAGES_ENABLED
-	else
-	{
-		DebugShout("[ProcessSections] PE Header mapping disabled, skipping.");
-	}
-	#endif
+	//}
+	//
+	//else
+	//{
+	//	#ifdef DEBUG_MESSAGES_ENABLED
+	//	DebugShout("[ProcessSections] PE Header mapping disabled, skipping.");
+	//	#endif
+	//}
+	//#endif
 
 	// Write individual sections
 	PIMAGE_SECTION_HEADER ImageSectionHeader = (PIMAGE_SECTION_HEADER)((ULONG_PTR)&ImageNtHeaders->OptionalHeader + ImageNtHeaders->FileHeader.SizeOfOptionalHeader);
@@ -1524,13 +1683,15 @@ BOOL CRemoteLoader::ProcessSections(PVOID BaseAddress, PVOID RemoteAddress, BOOL
 			ULONG Protection = GetSectionProtection(ImageSectionHeader[i].Characteristics);
 			if (ProcessSection(ImageSectionHeader[i].Name, BaseAddress, RemoteAddress, ImageSectionHeader[i].PointerToRawData, ImageSectionHeader[i].VirtualAddress, ImageSectionHeader[i].SizeOfRawData, ImageSectionHeader[i].Misc.VirtualSize, Protection) == FALSE)
 			{
-			#ifdef DEBUG_MESSAGES_ENABLED
+				#ifdef DEBUG_MESSAGES_ENABLED
 				DebugShout("[ProcessSections] Failed [%s]", ImageSectionHeader[i].Name);
+				#endif
 			}
 			else
 			{
+				#ifdef DEBUG_MESSAGES_ENABLED
 				DebugShout("[ProcessSections] Success [%s]", ImageSectionHeader[i].Name);
-			#endif
+				#endif
 			}
 		}
 	}

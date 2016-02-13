@@ -97,11 +97,6 @@ namespace Utils
 		return TRUE;
 	}
 
-	static bool FileExists(const std::wstring& path)
-	{
-		return (GetFileAttributesW(path.c_str()) != 0xFFFFFFFF);
-	}
-
 	static std::wstring StripPath(const std::wstring& path)
 	{
 		if (path.empty())
@@ -117,6 +112,11 @@ namespace Utils
 			return path;
 	}
 
+	static bool FileExists(const std::wstring& path)
+	{
+		return (GetFileAttributesW(path.c_str()) != 0xFFFFFFFF);
+	}
+
 	static BOOL DoesDirectoryExist(const char* path)
 	{
 		DWORD dwAttributes = GetFileAttributes(path);
@@ -128,9 +128,7 @@ namespace Utils
 	static void CreateDirectoryIfNeeded(const char* path)
 	{
 		if (!DoesDirectoryExist(path))
-		{
 			CreateDirectory(path, NULL);
-		}
 	}
 
 	static std::wstring GetProcessDirectory(HANDLE hProcess)
