@@ -790,9 +790,10 @@ bool CRemoteLoader::CreateActx(PVOID BaseAddress)
 {
 	if (CreateTempManifestFileFromMemory(BaseAddress, 2))
 	{
-		if (!CreateActxFromManifest(m_tempManifest))
-			return false;
-		return true;
+		bool ret = CreateActxFromManifest(m_tempManifest);
+		remove(m_tempManifest);
+		ZeroMemory(m_tempManifest, MAX_PATH);
+		return ret;
 	}
 	else
 	{
@@ -801,14 +802,13 @@ bool CRemoteLoader::CreateActx(PVOID BaseAddress)
 		#endif
 		if (CreateTempManifestFileFromMemory(BaseAddress, 1))
 		{
-			if (!CreateActxFromManifest(m_tempManifest))
-				return false;
-			return true;
+			bool ret = CreateActxFromManifest(m_tempManifest);
+			remove(m_tempManifest);
+			ZeroMemory(m_tempManifest, MAX_PATH);
+			return ret;
 		}
 		else
-		{
-			return false;		
-		}
+			return false;
 	}
 }
 
@@ -827,7 +827,13 @@ bool CRemoteLoader::CreateTempManifestFileFromMemory(PVOID BaseAddress, DWORD Re
 		}
 
 		strcpy_s(m_tempManifest, m_baseDir);
-		strcat_s(m_tempManifest, "temp.dll.manifest");
+		char randomFilename[MAX_PATH];
+		sprintf_s(randomFilename, "%IX", GetTickCount64());
+		strcat_s(m_tempManifest, randomFilename);
+
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[CreateTempManifestFileFromMemory] Temp file: %s", m_tempManifest);
+		#endif
 
 		FILE* f;
 		errno_t err = fopen_s(&f, m_tempManifest, "w");
@@ -1641,8 +1647,8 @@ BOOL CRemoteLoader::ProcessSections(PVOID BaseAddress, PVOID RemoteAddress, BOOL
 		return FALSE;
 
 	// Writing the PE header
-	//if (MapPEHeader)
-	//{
+	if (MapPEHeader)
+	{
 		if (WriteProcessMemory(m_hProcess, RemoteAddress, BaseAddress, ImageNtHeaders->OptionalHeader.SizeOfHeaders, NULL) == FALSE)
 		{
 			#ifdef DEBUG_MESSAGES_ENABLED
@@ -1655,15 +1661,13 @@ BOOL CRemoteLoader::ProcessSections(PVOID BaseAddress, PVOID RemoteAddress, BOOL
 			DebugShout("[ProcessSections] Mapped PE Header successfully!");
 			#endif
 		}
-	//}
-	//
-	//else
-	//{
-	//	#ifdef DEBUG_MESSAGES_ENABLED
-	//	DebugShout("[ProcessSections] PE Header mapping disabled, skipping.");
-	//	#endif
-	//}
-	//#endif
+	}
+	else
+	{
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[ProcessSections] PE Header mapping disabled, skipping.");
+		#endif
+	}
 
 	// Write individual sections
 	PIMAGE_SECTION_HEADER ImageSectionHeader = (PIMAGE_SECTION_HEADER)((ULONG_PTR)&ImageNtHeaders->OptionalHeader + ImageNtHeaders->FileHeader.SizeOfOptionalHeader);
