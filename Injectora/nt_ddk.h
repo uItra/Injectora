@@ -4,8 +4,6 @@
 #include <Windows.h>
 #include <bcrypt.h>
 
-
-
 #define NT_SUCCESS(x) ((x) >= 0)
 #ifndef STATUS_SUCCESS
 #define STATUS_SUCCESS                 ((NTSTATUS)0x00000000L)

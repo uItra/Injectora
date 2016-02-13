@@ -150,7 +150,7 @@ bool Injector::Setup()
 		return false;
 	}
 
-	processHandle = OpenProcess(PROCESS_ALL_ACCESS, FALSE, processId);//PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ
+	processHandle = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, processId);
 	#if defined _DEBUG
 	printf("processHandle: 0x%X\n", processHandle);
 	#endif
