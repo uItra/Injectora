@@ -1175,9 +1175,6 @@
     <ClCompile Include="ProcessesComponent.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Utils.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="JuceLibraryCode\BinaryData.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

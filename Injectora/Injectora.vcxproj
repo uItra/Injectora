@@ -523,7 +523,6 @@
     <ClCompile Include="MainComponent.cpp" />
     <ClCompile Include="ProcessesComponent.cpp" />
     <ClCompile Include="ProcessesWindow.cpp" />
-    <ClCompile Include="Utils.cpp" />
     <ClCompile Include="JuceLibraryCode\modules\juce_core\text\juce_CharacterFunctions.cpp">
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>
