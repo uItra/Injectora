@@ -219,26 +219,7 @@ namespace Utils
 		return std::wstring();
 	}
 
-	static LONG GetProcessorArchitecture()
-	{
-		static LONG volatile nProcessorArchitecture = -1;
-		if (nProcessorArchitecture == -1)
-		{
-			SYSTEM_PROCESSOR_INFORMATION sProcInfo;
-			NTSTATUS nNtStatus;
-
-			tRtlGetNativeSystemInformation fnRtlGetNativeSystemInformation = (tRtlGetNativeSystemInformation)Utils::GetProcAddress((HMODULE)Utils::GetLocalModuleHandle("ntdll.dll"), "RtlGetNativeSystemInformation");
-			nNtStatus = fnRtlGetNativeSystemInformation((SYSTEM_INFORMATION_CLASS)SystemProcessorInformation, &sProcInfo, sizeof(sProcInfo), NULL);
-			if (nNtStatus == STATUS_NOT_IMPLEMENTED)
-			{
-				tNTQSI fnQuerySystemInformation = (tNTQSI)Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "NtQuerySystemInformation");
-				nNtStatus = fnQuerySystemInformation((SYSTEM_INFORMATION_CLASS)SystemProcessorInformation, &sProcInfo, sizeof(sProcInfo), NULL);
-			}
-			if (NT_SUCCESS(nNtStatus))
-				_InterlockedExchange(&nProcessorArchitecture, (LONG)(sProcInfo.ProcessorArchitecture));
-		}
-		return nProcessorArchitecture;
-	}
+	
 
 	static HMODULE GetLocalModuleHandle(const char* moduleName)
 	{
@@ -351,6 +332,101 @@ namespace Utils
 			free(dll_name);
 		}
 		return address;
+	}
+
+	/** The set of possible results of the getOperatingSystemType() method. */
+	enum OSType
+	{
+		UnknownOS = 0,
+
+		Win2000 = 0x4105,
+		WinXP = 0x4106,
+		WinVista = 0x4107,
+		Windows7 = 0x4108,
+		Windows8 = 0x4109,
+		Windows10 = 0x4110,
+
+		Windows = 0x4000,   /**< To test whether any version of Windows is running,
+							you can use the expression ((getOperatingSystemType() & Windows) != 0). */
+	};
+
+	static bool IsWindowsVersionOrLater(OSType target)
+	{
+		if (target == Windows10)
+		{
+			typedef LONG(__stdcall* fnRtlGetVersion)(PRTL_OSVERSIONINFOW lpVersionInformation);
+			static fnRtlGetVersion RtlGetVersion = (fnRtlGetVersion)Utils::GetProcAddress((HMODULE)Utils::GetLocalModuleHandle("ntdll.dll"), "RtlGetVersion");
+
+			RTL_OSVERSIONINFOEXW verInfo = { 0 };
+			verInfo.dwOSVersionInfoSize = sizeof(verInfo);
+
+			if (RtlGetVersion != 0 && RtlGetVersion((PRTL_OSVERSIONINFOW)&verInfo) == 0)
+			{
+				return (verInfo.dwMajorVersion == 10);
+			}
+			return false;
+		}
+
+		OSVERSIONINFOEX info;
+		memset(&info, 0, sizeof(OSVERSIONINFOEX));
+		info.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
+
+		if (target >= WinVista)
+		{
+			info.dwMajorVersion = 6;
+
+			switch (target)
+			{
+			case WinVista:   info.dwMinorVersion = 0; break;
+			case Windows7:   info.dwMinorVersion = 1; break;
+			case Windows8:	  info.dwMinorVersion = 2; break;
+			default: break;
+			}
+		}
+		else
+		{
+			info.dwMajorVersion = 5;
+			info.dwMinorVersion = target >= WinXP ? 1 : 0;
+		}
+
+		DWORDLONG mask = 0;
+
+		VER_SET_CONDITION(mask, VER_MAJORVERSION, VER_GREATER_EQUAL);
+		VER_SET_CONDITION(mask, VER_MINORVERSION, VER_GREATER_EQUAL);
+		VER_SET_CONDITION(mask, VER_SERVICEPACKMAJOR, VER_GREATER_EQUAL);
+		VER_SET_CONDITION(mask, VER_SERVICEPACKMINOR, VER_GREATER_EQUAL);
+
+		return VerifyVersionInfo(&info, VER_MAJORVERSION | VER_MINORVERSION | VER_SERVICEPACKMAJOR | VER_SERVICEPACKMINOR, mask) != FALSE;
+	}
+
+	static OSType GetOperatingSystemType()
+	{
+		const OSType types[] = { Windows10, Windows8, Windows7, WinVista, WinXP, Win2000 };
+		for (int i = 0; i < numElementsInArray(types); ++i)
+			if (IsWindowsVersionOrLater(types[i]))
+				return types[i];
+		return UnknownOS;
+	}
+	
+	static LONG GetProcessorArchitecture()
+	{
+		static LONG volatile nProcessorArchitecture = -1;
+		if (nProcessorArchitecture == -1)
+		{
+			SYSTEM_PROCESSOR_INFORMATION sProcInfo;
+			NTSTATUS nNtStatus;
+
+			tRtlGetNativeSystemInformation fnRtlGetNativeSystemInformation = (tRtlGetNativeSystemInformation)Utils::GetProcAddress((HMODULE)Utils::GetLocalModuleHandle("ntdll.dll"), "RtlGetNativeSystemInformation");
+			nNtStatus = fnRtlGetNativeSystemInformation((SYSTEM_INFORMATION_CLASS)SystemProcessorInformation, &sProcInfo, sizeof(sProcInfo), NULL);
+			if (nNtStatus == STATUS_NOT_IMPLEMENTED)
+			{
+				tNTQSI fnQuerySystemInformation = (tNTQSI)Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "NtQuerySystemInformation");
+				nNtStatus = fnQuerySystemInformation((SYSTEM_INFORMATION_CLASS)SystemProcessorInformation, &sProcInfo, sizeof(sProcInfo), NULL);
+			}
+			if (NT_SUCCESS(nNtStatus))
+				_InterlockedExchange(&nProcessorArchitecture, (LONG)(sProcInfo.ProcessorArchitecture));
+		}
+		return nProcessorArchitecture;
 	}
 
 	static HANDLE NtCreateThreadEx(HANDLE hProcess, LPVOID lpRemoteThreadStart, LPVOID lpParam, DWORD* threadId)

@@ -114,21 +114,12 @@ private:
 	// Initialize api set map
 	bool InitializeApiSchema()
 	{
-		if (SystemStats::IsWindowsVersionOrLater(SystemStats::Windows10))
-			return InitializeP< PAPI_SET_NAMESPACE_ARRAY_10,
-			PAPI_SET_NAMESPACE_ENTRY_10,
-			PAPI_SET_VALUE_ARRAY_10,
-			PAPI_SET_VALUE_ENTRY_10 >();
-		else if (SystemStats::IsWindowsVersionOrLater(SystemStats::Windows8))
-			return InitializeP< PAPI_SET_NAMESPACE_ARRAY,
-			PAPI_SET_NAMESPACE_ENTRY,
-			PAPI_SET_VALUE_ARRAY,
-			PAPI_SET_VALUE_ENTRY >();
-		else if (SystemStats::IsWindowsVersionOrLater(SystemStats::Windows7))
-			return InitializeP< PAPI_SET_NAMESPACE_ARRAY_V2,
-			PAPI_SET_NAMESPACE_ENTRY_V2,
-			PAPI_SET_VALUE_ARRAY_V2,
-			PAPI_SET_VALUE_ENTRY_V2 >();
+		if (Utils::IsWindowsVersionOrLater(Utils::Windows10))
+			return InitializeP<PAPI_SET_NAMESPACE_ARRAY_10, PAPI_SET_NAMESPACE_ENTRY_10, PAPI_SET_VALUE_ARRAY_10, PAPI_SET_VALUE_ENTRY_10>();
+		else if (Utils::IsWindowsVersionOrLater(Utils::Windows8))
+			return InitializeP<PAPI_SET_NAMESPACE_ARRAY, PAPI_SET_NAMESPACE_ENTRY, PAPI_SET_VALUE_ARRAY, PAPI_SET_VALUE_ENTRY>();
+		else if (Utils::IsWindowsVersionOrLater(Utils::Windows7))
+			return InitializeP<PAPI_SET_NAMESPACE_ARRAY_V2, PAPI_SET_NAMESPACE_ENTRY_V2, PAPI_SET_VALUE_ARRAY_V2, PAPI_SET_VALUE_ENTRY_V2>();
 		else
 			return true;
 	}
@@ -142,7 +133,7 @@ private:
 
 		PEB_T *ppeb = reinterpret_cast<PEB_T*>(reinterpret_cast<TEB_T*>(NtCurrentTeb())->ProcessEnvironmentBlock);
 		T1 pSetMap = reinterpret_cast<T1>(ppeb->ApiSetMap);
-
+ 
 		for (DWORD i = 0; i < pSetMap->Count; i++)
 		{
 			T2 pDescriptor = pSetMap->entry(i);
@@ -169,7 +160,6 @@ private:
 
 		return true;
 	}
-
 
 	// Resolve path flags
 	enum eResolveFlag
