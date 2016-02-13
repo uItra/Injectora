@@ -429,6 +429,56 @@ namespace Utils
 		return nProcessorArchitecture;
 	}
 
+	enum PlatformType
+	{
+		UnknownPlatform = 0,
+		ProcessPlatformX86 = 1,
+		ProcessPlatformX64 = 2
+	};
+
+	static int GetProcessPlatform(HANDLE hProcess)
+	{
+		if (hProcess == (HANDLE)((LONG_PTR)-1))
+		{
+			#if defined(_M_IX86)
+			return 1; // ProcessPlatformX86;
+			#elif defined(_M_X64)
+			return 2; // ProcessPlatformX64
+			#endif
+		}
+		switch (Utils::GetProcessorArchitecture())
+		{
+		case PROCESSOR_ARCHITECTURE_INTEL:
+			return ProcessPlatformX86;
+		case PROCESSOR_ARCHITECTURE_AMD64:
+			//check on 64-bit platforms
+			ULONG_PTR nWow64;
+			NTSTATUS nNtStatus;
+	
+			static HMODULE hNtDll = (HMODULE)Utils::GetLocalModuleHandle("ntdll.dll");
+			static tNTQIP fnNTQIP = (tNTQIP)Utils::GetProcAddress(hNtDll, "NtQueryInformationProcess");
+
+			nNtStatus = fnNTQIP(hProcess, ProcessWow64Information, &nWow64, sizeof(nWow64), NULL);
+			if (NT_SUCCESS(nNtStatus))
+			{
+				#ifdef _WIN64
+				return (nWow64 != 0) ? ProcessPlatformX86 : ProcessPlatformX64;		
+				#else
+				return (nWow64 == 0) ? ProcessPlatformX64 : ProcessPlatformX86;
+				#endif
+			}
+			#ifdef _WIN64
+			return ProcessPlatformX64;
+			#else
+			return ProcessPlatformX86;
+			#endif
+			break;
+			//case PROCESSOR_ARCHITECTURE_IA64:
+			//case PROCESSOR_ARCHITECTURE_ALPHA64:
+		}
+		return STATUS_NOT_SUPPORTED;
+	}
+
 	static HANDLE NtCreateThreadEx(HANDLE hProcess, LPVOID lpRemoteThreadStart, LPVOID lpParam, DWORD* threadId)
 	{
 		tNtCreateThreadEx NtCreateThreadEx = (tNtCreateThreadEx)Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "NtCreateThreadEx");

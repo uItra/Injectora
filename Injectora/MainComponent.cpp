@@ -148,11 +148,11 @@ MainComponent::~MainComponent()
 
 String MainComponent::openFile()
 {
-	TCHAR szDir[MAX_PATH];
-	GetModuleFileName(NULL, szDir, MAX_PATH);
-	String myDir = szDir;
-	myDir = myDir.upToLastOccurrenceOf(".", false, true);
-	File file(myDir + "_settings.xml");
+	TCHAR szFile[MAX_PATH];
+	GetModuleFileName(NULL, szFile, MAX_PATH);
+	String strFile = szFile;
+	strFile = strFile.upToLastOccurrenceOf(".", false, true);
+	File file(strFile + "_settings.xml");
 	if (file.exists())
 		return file.loadFileAsString();
 	return String::empty;

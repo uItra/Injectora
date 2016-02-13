@@ -1881,42 +1881,7 @@ TCHAR* CRemoteLoader::LastErrorString()
 
 int CRemoteLoader::GetProcessPlatform()
 {
-	if (m_hProcess == (HANDLE)((LONG_PTR)-1))
-	{
-		#if defined(_M_IX86)
-		return 1; // ProcessPlatformX86;
-		#elif defined(_M_X64)
-		return 2; // ProcessPlatformX64
-		#endif
-	}
-	switch (Utils::GetProcessorArchitecture())
-	{
-	case PROCESSOR_ARCHITECTURE_INTEL:
-		return 1; // ProcessPlatformX86;
-	case PROCESSOR_ARCHITECTURE_AMD64:
-		//check on 64-bit platforms
-		ULONG_PTR nWow64;
-		NTSTATUS nNtStatus;
-
-		nNtStatus = fnNTQIP(m_hProcess, ProcessWow64Information, &nWow64, sizeof(nWow64), NULL);
-		if (NT_SUCCESS(nNtStatus))
-		{
-			#if defined(_M_IX86)
-			return (nWow64 == 0) ? 2 : 1;
-			#elif defined(_M_X64)
-			return (nWow64 != 0) ? 1 : 2;
-			#endif
-		}
-		#if defined(_M_IX86)
-		return 1;
-		#elif defined(_M_X64)
-		return 2;
-		#endif
-		break;
-		//case PROCESSOR_ARCHITECTURE_IA64:
-		//case PROCESSOR_ARCHITECTURE_ALPHA64:
-	}
-	return STATUS_NOT_SUPPORTED;
+	return Utils::GetProcessPlatform(m_hProcess);
 }
 
 

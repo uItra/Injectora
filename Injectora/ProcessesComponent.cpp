@@ -99,11 +99,22 @@ bool ProcessesComponent::FetchProcessList()
 				{
 					if (_stricmp("System", pName) && _stricmp("[System Process]", pName))
 					{
-						ProcessInfo info;
-						info.processId = infoP->ProcessId;
-						info.processName = pName;
+						HANDLE processHandle = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, infoP->ProcessId);
+						if (processHandle != NULL)
+						{
+							#ifdef _WIN64
+							if (Utils::GetProcessPlatform(processHandle) == Utils::ProcessPlatformX64) {
+							#else
+							if (Utils::GetProcessPlatform(processHandle) == Utils::ProcessPlatformX86) {
+							#endif
+								ProcessInfo info;
+								info.processId = infoP->ProcessId;
+								info.processName = pName;
 
-						processes.add(info);
+								processes.add(info);
+							}
+							CloseHandle(processHandle);
+						}
 					}
 				}
 

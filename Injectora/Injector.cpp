@@ -141,27 +141,20 @@ BOOL Injector::CheckValidProcessExtension(const char* name)
 bool Injector::Setup()
 {
 	processId = GetProcessId();
-	#if defined _DEBUG
-	printf("processId: 0x%X\n", processId);
-	#endif
 	if (processId == 0)
 	{
-		MessageBox(0, "Could not find process!\n", "Injectora", MB_ICONEXCLAMATION);
+		MessageBox(0, "Could not find process!", "Injectora", MB_ICONEXCLAMATION);
 		return false;
 	}
 
 	processHandle = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, processId);
-	#if defined _DEBUG
-	printf("processHandle: 0x%X\n", processHandle);
-	#endif
 	if (processHandle != NULL)
 	{
 		remoteLoader.SetProcess(processHandle);
-
 		return true;
 	}
 
-	MessageBox(0, "Injector[Setup] failure: not able to open process!", "Injectora", MB_ICONERROR);
+	MessageBox(0, "[Injector::Setup] Failed. Not able to open process handle!", "Injectora", MB_ICONERROR);
 
 	return false;
 }
