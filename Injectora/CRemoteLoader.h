@@ -64,9 +64,11 @@ private:
 	void*							GetRemoteProcAddressImpl_DEPRECATED(HMODULE module, const char *proc_name);
 
 public:
+	FARPROC							GetDependencyProcAddressA(HMODULE Module, LPCCH procName);
+	FARPROC							GetDependencyProcAddressW(HMODULE Module, LPCWCH procName);
+	
 	FARPROC							GetRemoteProcAddressA(LPCCH module, SHORT procOrdinal);
 	FARPROC							GetRemoteProcAddressW(LPCWCH module, SHORT procOrdinal);
-
 	FARPROC							GetRemoteProcAddressA(LPCCH module, LPCCH procName);
 	FARPROC							GetRemoteProcAddressW(LPCWCH module, LPCWCH procName);
 

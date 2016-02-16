@@ -36,7 +36,7 @@ HMODULE CRemoteLoader::LoadDependencyW(LPCWCH Path)
 		return NULL;
 	}
 
-	FARPROC RemoteLdrLoadDll = GetRemoteProcAddressA("ntdll.dll", "LdrLoadDll");
+	FARPROC RemoteLdrLoadDll = (FARPROC)Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "LdrLoadDll");//GetRemoteProcAddressA("ntdll.dll", "LdrLoadDll");
 	if (RemoteLdrLoadDll == NULL)
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
@@ -157,7 +157,7 @@ HMODULE CRemoteLoader::LoadLibraryByPathW(LPCWCH Path, ULONG Flags/*= NULL*/)
 		return NULL;
 	}
 
-	FARPROC RemoteLdrLoadDll = GetRemoteProcAddressA("ntdll.dll", "LdrLoadDll");
+	FARPROC RemoteLdrLoadDll = (FARPROC)Utils::GetProcAddress(Utils::GetLocalModuleHandle("ntdll.dll"), "LdrLoadDll"); //GetRemoteProcAddressA("ntdll.dll", "LdrLoadDll");
 	if (RemoteLdrLoadDll == NULL)
 	{
 		#ifdef DEBUG_MESSAGES_ENABLED
@@ -324,11 +324,11 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 		return NULL;
 	}
 
-	//
-	// Create Remote Procedure Call environment. No need for this in 32 bit
-	//
 	if ( m_bIs64bit)
 	{
+		//
+		// Create Remote Procedure Call environment. No need for this in 32 bit
+		//
 		DWORD err = CreateRPCEnvironment();
 		if (err != ERROR_SUCCESS)
 		{
@@ -337,9 +337,9 @@ HMODULE CRemoteLoader::LoadLibraryFromMemory(PVOID BaseAddress, DWORD SizeOfModu
 			#endif
 			return NULL;
 		}
-		
+
 		//
-		// Create activation context for the module we're injecting
+		// Create activation context for the module we're injecting. Not needed for x86 modules.
 		//
 		#ifdef DEBUG_MESSAGES_ENABLED
 		DebugShout("[LoadLibraryFromMemory] Creating Activation Context!");
@@ -763,21 +763,20 @@ BOOL CRemoteLoader::CallEntryPoint(void* BaseAddress, FARPROC Entrypoint)
 
 		return TRUE;
 	}
-	else
-	{
-		PushInt((INT)BaseAddress);
-		PushInt(DLL_PROCESS_ATTACH);
-		PushInt(0);
-		PushCall(CCONV_STDCALL, Entrypoint);
-		// Zero eax and return
-		// xor eax, eax
-		AddByteToBuffer(0x33);
-		AddByteToBuffer(0xC0);
-		// ret 4
-		AddByteToBuffer(0xC2);
-		AddByteToBuffer(0x04);
-		AddByteToBuffer(0x00);
-	}
+	
+	// x86 injection
+	PushInt((INT)BaseAddress);
+	PushInt(DLL_PROCESS_ATTACH);
+	PushInt(0);
+	PushCall(CCONV_STDCALL, Entrypoint);
+	// Zero eax and return
+	// xor eax, eax
+	AddByteToBuffer(0x33);
+	AddByteToBuffer(0xC0);
+	// ret 4
+	AddByteToBuffer(0xC2);
+	AddByteToBuffer(0x04);
+	AddByteToBuffer(0x00);
 
 	#ifdef DEBUG_MESSAGES_ENABLED
 	DebugShout("\nCallEntryPoint [0x%IX]:", Entrypoint);
@@ -994,8 +993,8 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 					strBaseDll.assign(strDll.begin(), strDll.end());
 					ResolvePath(strBaseDll, EnsureFullPath);
 
-					ModuleBase = LoadDependencyW(strBaseDll.c_str());
-					if (ModuleBase == NULL)
+					ModuleBase = LoadLibraryByPathIntoMemoryW(strBaseDll.c_str(), TRUE); // LoadDependencyW(strBaseDll.c_str());
+ 					if (ModuleBase == NULL)
 					{
 						#ifdef DEBUG_MESSAGES_ENABLED
 						DebugShout("[ProcessImportTable] Failed to obtain module handle [%s]", ModuleName);
@@ -1018,14 +1017,12 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 					ImageFuncData = (IMAGE_THUNK_DATA*)RvaToPointer(ImageImportDescriptor->FirstThunk, BaseAddress);
 				}
 
-
 				if (ImageThunkData == NULL)
 				{
 					#ifdef DEBUG_MESSAGES_ENABLED
 					DebugShout("[ProcessImportTable] Image Thunk Data is NULL");
 					#endif
 				}
-
 				if (ImageFuncData == NULL)
 				{
 					#ifdef DEBUG_MESSAGES_ENABLED
@@ -1037,18 +1034,13 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 				{
 					FARPROC FunctionAddress = NULL;
 
-					bool bSnapByOrdinal = false;
-					if (m_bIs64bit)
-						bSnapByOrdinal = ((ImageThunkData->u1.Ordinal & IMAGE_ORDINAL_FLAG64) != 0);
-					else
-						bSnapByOrdinal = ((ImageThunkData->u1.Ordinal & IMAGE_ORDINAL_FLAG32) != 0);
-
+					bool bSnapByOrdinal = m_bIs64bit ? ((ImageThunkData->u1.Ordinal & IMAGE_ORDINAL_FLAG64) != 0) : ((ImageThunkData->u1.Ordinal & IMAGE_ORDINAL_FLAG32) != 0);
 					if (bSnapByOrdinal)
 					{
 						SHORT Ordinal = (SHORT)(ImageThunkData->u1.Ordinal & 0xffff);
 
-						FunctionAddress = (FARPROC)GetRemoteProcAddressA(ModuleName, (const char*)Ordinal); // Utils::GetProcAddress
-						
+						FunctionAddress = (FARPROC)GetDependencyProcAddressA(ModuleBase, (const char*)Ordinal);
+
 						// Failed to resolve import
 						if (FunctionAddress == 0)
 						{
@@ -1056,7 +1048,6 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 							#ifdef DEBUG_MESSAGES_ENABLED
 							DebugShout("[ProcessImportTable] Failed to get import [%d] from image [%s]", Ordinal, ModuleName);
 							#endif
-
 							return FALSE;
 						}
 
@@ -1069,7 +1060,7 @@ BOOL CRemoteLoader::ProcessImportTable(PVOID BaseAddress, PVOID RemoteAddress)
 						PIMAGE_IMPORT_BY_NAME ImageImportByName = (PIMAGE_IMPORT_BY_NAME)RvaToPointer(*(DWORD*)ImageThunkData, BaseAddress);
 						char* NameOfImport = (char*)ImageImportByName->Name;
 
-						FunctionAddress = (FARPROC)GetRemoteProcAddressA(ModuleName, NameOfImport); // Utils::GetProcAddress
+						FunctionAddress = (FARPROC)GetDependencyProcAddressA(ModuleBase, NameOfImport);
 
 						#ifdef DEBUG_MESSAGES_ENABLED
 						DebugShout("[ProcessImportTable] Processed (%s -> %s) -> (0x%IX)", ModuleName, NameOfImport, FunctionAddress);
@@ -1128,6 +1119,25 @@ BOOL CRemoteLoader::ProcessDelayedImportTable(PVOID BaseAddress, PVOID RemoteAdd
 				DebugShout("[ProcessDelayedImportTable] Module Name [%s]", ModuleName);
 				#endif
 
+				HMODULE ModuleBase = GetRemoteModuleHandleA(ModuleName);
+				if (ModuleBase == NULL) 
+				{
+					std::string strDll = ModuleName;
+					std::wstring strBaseDll = L"";
+
+					strBaseDll.assign(strDll.begin(), strDll.end());
+					ResolvePath(strBaseDll, EnsureFullPath);
+
+					ModuleBase = LoadLibraryByPathIntoMemoryW(strBaseDll.c_str(), TRUE);//LoadDependencyW(strBaseDll.c_str());
+					if (ModuleBase == NULL)
+					{
+						#ifdef DEBUG_MESSAGES_ENABLED
+						DebugShout("[ProcessDelayedImportTable] Failed to obtain module handle [%s]", ModuleName);
+						#endif
+						continue;
+					}
+				}
+
 				IMAGE_THUNK_DATA *ImageThunkData = NULL;
 				IMAGE_THUNK_DATA *ImageFuncData = NULL;
 
@@ -1171,7 +1181,7 @@ BOOL CRemoteLoader::ProcessDelayedImportTable(PVOID BaseAddress, PVOID RemoteAdd
 					{
 						WORD Ordinal = (WORD)(ImageThunkData->u1.Ordinal & 0xffff);
 
-						FunctionAddress = (FARPROC)GetRemoteProcAddressA(ModuleName, Ordinal); // Utils::GetProcAddress
+						FunctionAddress = (FARPROC)GetDependencyProcAddressA(ModuleBase, (const char*)Ordinal); // Utils::GetProcAddress
 						// Failed to resolve import
 						if (FunctionAddress == 0)
 						{
@@ -1190,7 +1200,7 @@ BOOL CRemoteLoader::ProcessDelayedImportTable(PVOID BaseAddress, PVOID RemoteAdd
 					{
 						PIMAGE_IMPORT_BY_NAME ImageImportByName = (PIMAGE_IMPORT_BY_NAME)RvaToPointer(*(DWORD*)ImageThunkData, BaseAddress);
 
-						FunctionAddress = (FARPROC)GetRemoteProcAddressA(ModuleName, (PCHAR)ImageImportByName->Name); // Utils::GetProcAddress
+						FunctionAddress = (FARPROC)GetDependencyProcAddressA(ModuleBase, ImageImportByName->Name); // Utils::GetProcAddress
 						// Failed to resolve import
 						if (FunctionAddress == 0)
 						{
@@ -1243,6 +1253,105 @@ FARPROC CRemoteLoader::GetRemoteProcAddressW(LPCWCH Module, LPCWCH procName)
 	wcstombs_s(&charsConverted, ProcNameAnsi, procName, MAX_PATH);
 
 	return GetRemoteProcAddressA(ModuleAnsi, ProcNameAnsi);
+}
+
+FARPROC CRemoteLoader::GetDependencyProcAddressW(HMODULE ModuleBase, LPCWCH procName)
+{
+	char ProcAnsi[MAX_PATH];
+	size_t charsConverted;
+	wcstombs_s(&charsConverted, ProcAnsi, procName, MAX_PATH);
+	return GetDependencyProcAddressA(ModuleBase, ProcAnsi);
+}
+
+FARPROC CRemoteLoader::GetDependencyProcAddressA(HMODULE ModuleBase, LPCCH proc_name)
+{
+	void* modb = (void*)ModuleBase;
+
+	IMAGE_DOS_HEADER hdrDos = { 0 };
+	IMAGE_NT_HEADERS hdrNt32 = { 0 };
+	IMAGE_EXPORT_DIRECTORY* expData = { 0 };
+	void* pFunc = NULL;
+
+	SIZE_T dwRead = 0;
+	ReadProcessMemory(m_hProcess, (uint8_t*)modb, &hdrDos, sizeof(IMAGE_DOS_HEADER), &dwRead);
+	if (hdrDos.e_magic != IMAGE_DOS_SIGNATURE)
+		return NULL;
+
+	ReadProcessMemory(m_hProcess, (uint8_t*)modb + hdrDos.e_lfanew, &hdrNt32, sizeof(IMAGE_NT_HEADERS), &dwRead);
+	if (hdrNt32.Signature != IMAGE_NT_SIGNATURE)
+		return NULL;
+
+	size_t expBase = hdrNt32.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+	// Exports are present
+	if (expBase)
+	{
+		DWORD expSize = hdrNt32.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].Size;
+		expData = (IMAGE_EXPORT_DIRECTORY*)malloc(expSize);
+		ReadProcessMemory(m_hProcess, (uint8_t*)modb + expBase, expData, expSize, &dwRead);
+
+		WORD  *pAddressOfOrds  = (WORD*) (expData->AddressOfNameOrdinals + (size_t)expData - expBase);
+		DWORD *pAddressOfNames = (DWORD*)(expData->AddressOfNames + (size_t)expData - expBase);
+		DWORD *pAddressOfFuncs = (DWORD*)(expData->AddressOfFunctions + (size_t)expData - expBase);
+
+		for (DWORD i = 0; i < expData->NumberOfFunctions; ++i)
+		{
+			WORD OrdIndex = 0xFFFF;
+			char *pName = NULL;
+			// Find by index
+			if ((size_t)proc_name <= 0xFFFF)
+				OrdIndex = (WORD)i;
+			// Find by name
+			else if ((size_t)proc_name > 0xFFFF && i < expData->NumberOfNames)
+			{
+				pName = (char*)(pAddressOfNames[i] + (size_t)expData - expBase);
+				OrdIndex = (WORD)pAddressOfOrds[i];
+			}
+			else
+				return 0;
+
+			if (((size_t)proc_name <= 0xFFFF && (WORD)proc_name == (OrdIndex + expData->Base)) || ((size_t)proc_name > 0xFFFF && strcmp(pName, proc_name) == 0))
+			{
+				pFunc = (void*)((size_t)modb + pAddressOfFuncs[OrdIndex]);
+				// Check forwarded export
+				if ((size_t)pFunc >= (size_t)modb + expBase && (size_t)pFunc <= (size_t)modb + expBase + expSize)
+				{
+					char forwardStr[255] = { 0 };
+					ReadProcessMemory(m_hProcess, pFunc, forwardStr, sizeof(forwardStr), &dwRead);
+
+					std::string chainExp(forwardStr);
+
+					std::string strDll = chainExp.substr(0, chainExp.find(".")) + ".dll";
+					std::string strName = chainExp.substr(chainExp.find(".") + 1, strName.npos);
+
+					HMODULE hChainMod = GetRemoteModuleHandleA(strDll.c_str());
+					if (hChainMod == NULL)
+						hChainMod = LoadDependencyA(strDll.c_str());
+
+					// Import by ordinal
+					if (strName.find("#") == 0)
+						return GetDependencyProcAddressA(hChainMod, (const char*)atoi(strName.c_str() + 1));
+					// Import by name
+					else
+						return GetDependencyProcAddressA(hChainMod, strName.c_str());
+				}
+
+				break;
+			}
+		}
+		// Free allocated data
+		free(expData);
+	}
+
+	return (FARPROC)pFunc;
+}
+
+FARPROC	CRemoteLoader::GetRemoteProcAddressW(LPCWCH Module, SHORT procOrdinal)
+{
+	char ModuleAnsi[MAX_PATH];
+	size_t charsConverted;
+	wcstombs_s(&charsConverted, ModuleAnsi, Module, MAX_PATH);
+
+	return GetRemoteProcAddressA(ModuleAnsi, procOrdinal);
 }
 
 FARPROC CRemoteLoader::GetRemoteProcAddressA(LPCCH Module, LPCCH procName)
@@ -1335,15 +1444,6 @@ FARPROC CRemoteLoader::GetRemoteProcAddressA(LPCCH Module, LPCCH procName)
 	RemoteFreeMemory(ReturnPointerValue, sizeof(size_t));
 
 	return NULL;
-}
-
-FARPROC	CRemoteLoader::GetRemoteProcAddressW(LPCWCH Module, SHORT procOrdinal)
-{
-	char ModuleAnsi[MAX_PATH];
-	size_t charsConverted;
-	wcstombs_s(&charsConverted, ModuleAnsi, Module, MAX_PATH);
-
-	return GetRemoteProcAddressA(ModuleAnsi, procOrdinal);
 }
 
 FARPROC CRemoteLoader::GetRemoteProcAddressA(LPCCH Module, SHORT procOrdinal)
