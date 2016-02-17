@@ -150,7 +150,7 @@ bool Injector::Setup()
 	processHandle = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, processId);
 	if (processHandle != NULL)
 	{
-		remoteLoader.SetProcess(processHandle);
+		remoteLoader.SetProcess(processHandle, processId);
 		return true;
 	}
 

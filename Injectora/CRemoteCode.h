@@ -89,6 +89,18 @@ typedef vector<unsigned char>	remote_thread_buffer_t;
 class CRemoteCode
 {
 public:
+	CRemoteCode() :
+		m_bBaseDirIsSet(false),
+		m_pWorkerCode(0),
+		m_pWorkerCodeThread(0),
+		m_pUserCode(0),
+		m_pAContext(0),
+		m_hWorkThd(0),
+		m_dwWorkerThreadId(0),
+		m_hWaitEvent(0)
+	{
+	}
+
 	void					PushParameter(parameter_type_t param_type, void *param);
 
 	void					PushInt(int i);
@@ -156,6 +168,8 @@ protected:
 
 protected:
 	HANDLE					m_hProcess;
+	DWORD					m_dwProcessId;
+
 	bool					m_bIs64bit;
 
 	tNTQIP					fnNTQIP;
@@ -166,6 +180,7 @@ protected:
 
 	HANDLE					m_hWaitEvent; // APC sync event handle
 	HANDLE					m_hWorkThd;  // Worker thread handle
+	DWORD					m_dwWorkerThreadId; // Worker thread ID
 	void*					m_pWorkerCode;
 	void*					m_pWorkerCodeThread; // m_pWorkCode + space
 	void*					m_pUserCode; // m_pWorkCode + space + m_pWorkCodeSize

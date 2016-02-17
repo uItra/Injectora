@@ -45,10 +45,17 @@ struct RelocData
 class CRemoteLoader : public CRemoteCode
 {
 public:
-	CRemoteLoader()					{ InitializeApiSchema(); }
+	CRemoteLoader() : 
+		m_hActx(0)
 
-	void							SetProcess(HANDLE hProcess);
+	{ 
+		InitializeApiSchema(); 
+	}
 
+	void							SetProcess(HANDLE hProcess, DWORD dwProcessId);
+
+	HMODULE							LdrpLoadDll(LPCCH Path);
+	HMODULE							LdrpLoadDll(LPCWCH Path);
 	HMODULE							LoadDependencyA(LPCCH Path);
 	HMODULE							LoadDependencyW(LPCWCH Path);
 	HMODULE							LoadLibraryByPathA(LPCCH Path, ULONG Flags = NULL);
@@ -89,6 +96,11 @@ protected:
 
 	bool							CreateTempManifestFileFromMemory(PVOID BaseAddress, DWORD ResourceId);
 	DWORD							GetEmbeddedManifestResourceFromMemory(PVOID BaseAddress, DWORD ResourceId, void** Resource);
+
+	NTSTATUS						EnableExceptions(PVOID BaseAddress, PVOID RemoteAddress, size_t ImageSize);
+	DWORD							CreateVEH(size_t RemoteAddress /*= 0*/, size_t ImageSize /*= 0*/);
+
+	bool							InitializeCookie(PVOID BaseAddress, PVOID RemoteAddress);
 
 	BOOL							ProcessDelayedImportTable(PVOID BaseAddress, PVOID RemoteAddress );
 	BOOL							ProcessImportTable( PVOID BaseAddress, PVOID RemoteAddress );
@@ -151,7 +163,7 @@ private:
 			for (DWORD j = 0; j < pHostData->Count; j++)
 			{
 				T4 pHost = pHostData->entry(pSetMap, j);
-				std::wstring hostName(reinterpret_cast<wchar_t*>(reinterpret_cast<uint8_t*>(pSetMap)+pHost->ValueOffset), pHost->ValueLength / sizeof(wchar_t));
+				std::wstring hostName((wchar_t*)((BYTE*)pSetMap + pHost->ValueOffset), pHost->ValueLength / sizeof(wchar_t));
 
 				if (!hostName.empty())
 					vhosts.push_back(hostName);
@@ -246,7 +258,7 @@ private:
 				DWORD dwSize = 255;
 				DWORD dwType = 0;
 
-				res = RegEnumValueW(hKey, i, value_name, &dwSize, NULL, &dwType, reinterpret_cast<LPBYTE>(value_data), &dwSize);
+				res = RegEnumValueW(hKey, i, value_name, &dwSize, NULL, &dwType, (LPBYTE)value_data, &dwSize);
 
 				if (_wcsicmp(value_data, filename.c_str()) == 0)
 				{
@@ -289,7 +301,6 @@ private:
 			path = completePath;
 			return ERROR_SUCCESS;
 		}
-
 
 		//
 		// 4. The Windows directory
@@ -339,8 +350,11 @@ private:
 	DWORD ProbeSxSRedirect(std::wstring& path)
 	{
 		UNICODE_STRING OriginalName;
+		ZeroMemory(&OriginalName, sizeof(UNICODE_STRING));
 		UNICODE_STRING DllName1;
+		ZeroMemory(&DllName1, sizeof(UNICODE_STRING));
 		UNICODE_STRING DllName2;
+		ZeroMemory(&DllName2, sizeof(UNICODE_STRING));
 		PUNICODE_STRING pPath = nullptr;
 		ULONG_PTR cookie = 0;
 		wchar_t wBuf[255] = { 0 };

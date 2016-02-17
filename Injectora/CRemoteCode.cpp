@@ -958,7 +958,14 @@ DWORD CRemoteCode::CreateRPCEnvironment(bool noThread /*= false*/)
 	// Create synchronization event
 	status = CreateAPCEvent(thdID);
 	if (thdID == 0 || status == false)
+	{
 		dwResult = GetLastError();
+		#ifdef DEBUG_MESSAGES_ENABLED
+		DebugShout("[CreateRPCEnvironment] Error: %s", Utils::GetLastErrorAsString().c_str());
+		#endif
+	}
+
+	m_dwWorkerThreadId = thdID;
 
 	return dwResult;
 }
@@ -1029,7 +1036,6 @@ DWORD CRemoteCode::CreateWorkerThread()
 
 		delete[] newBuffer;
 
-
 		//m_hWorkThd = CreateRemoteThread(m_hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)m_pWorkerCodeThread, m_pWorkerCode, 0, &thdID);
 		m_hWorkThd = Utils::NtCreateThreadEx(m_hProcess, (LPTHREAD_START_ROUTINE)m_pWorkerCodeThread, m_pWorkerCode, &thdID);
 
@@ -1073,7 +1079,7 @@ DWORD CRemoteCode::TerminateWorkerThread()
 
 bool CRemoteCode::CreateAPCEvent( DWORD threadID )
 {         
-    if(m_hWaitEvent == NULL)
+    if(!m_hWaitEvent)
     {
         size_t dwResult        = ERROR_SUCCESS;
 		void* pCodecave		   = NULL;
@@ -1271,7 +1277,7 @@ DWORD CRemoteCode::ExecuteInWorkerThread(remote_thread_buffer_t thread_data, siz
 	}
 
 	// Ensure APC function fully returns
-	Sleep(10);
+	Sleep(5);
 
 	// Free remote memory. Don't wanna forget lel
 	RemoteFreeMemory(RemoteBuffer, thread_data.size());
