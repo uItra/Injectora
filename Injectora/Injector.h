@@ -45,6 +45,7 @@ private:
 	bool hasInjected;
 	bool isManualMap;
 	bool isReady;
+	bool canInject;
 	String DLL;
 	Array<int> oldProcessIds;
 	String processName;

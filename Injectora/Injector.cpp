@@ -162,16 +162,16 @@ bool Injector::Setup()
 void Injector::timerCallback()
 {
 	DWORD pidCheck = GetProcessId();		
-	if (pidCheck != 0)
+	if (pidCheck != 0 && !canInject)
 	{
 		//if (pidCheck == processId)
 		//{
-			bool canInject = true;
+			canInject = true;
 			for (int i = 0; i < oldProcessIds.size(); i++)
 			{
 				if (oldProcessIds[i] == pidCheck)
 				{
-					MessageBox(0, "Module already loaded into this process!", "Injectora", MB_ICONEXCLAMATION);
+					//MessageBox(0, "Module already loaded into this process!", "Injectora", MB_ICONEXCLAMATION);
 					canInject = false;
 					break;
 				}
@@ -235,8 +235,11 @@ HRESULT Injector::ManualMap(String filePath)
 		return 4;
 	}
 
-	if (!closeOnInject && !autoInject)
-		MessageBox(0, "Manual Map Success!", "Injectora", MB_ICONASTERISK);
+	// Beep of success
+	MessageBeep(MB_OK);
+	//if (!closeOnInject && !autoInject) {
+	//	MessageBox(0, "Manual Map Success!", "Injectora", MB_ICONASTERISK);
+	//}
 	
 	oldProcessIds.add(processId);
 
@@ -294,16 +297,21 @@ BOOL Injector::LoadLibraryInject(String filePath)
 	HMODULE returnedModule = remoteLoader.LoadLibraryByPathA(filePath.getCharPointer());
 	if (returnedModule)
 	{
-		MessageBox(0, "LoadLibrary injection success!", "Injectora", MB_ICONASTERISK);
+		//MessageBox(0, "LoadLibrary injection success!", "Injectora", MB_ICONASTERISK);
 		bRet = TRUE;
 		oldProcessIds.add(processId);
-		CloseHandle(processHandle);
 	}
 	else
 	{
 		MessageBox(0, "LoadLibraryByPathA Failed!", "Injectora", MB_ICONERROR);
 		bRet = FALSE;
 	}
+
+	// Beep of success
+	MessageBeep(MB_OK);
+
+	// close process handle
+	CloseHandle(processHandle);
 
 	if (closeOnInject && bRet == TRUE)
 		PostQuitMessage(0);
